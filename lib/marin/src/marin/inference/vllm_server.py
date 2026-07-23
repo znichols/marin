@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 # Bounded tail for the failure path and diagnostics(); the full stream reaches the job log, so
 # this is only a convenience snapshot, capped because vLLM logs can be large.
 _NATIVE_LOG_TAIL_LINES = 1000
-_STDOUT_LOG = "stdout.log"
-_STDERR_LOG = "stderr.log"
 _REMOVED_VLLM_MODE_MESSAGE = (
     "MARIN_VLLM_MODE no longer selects a vLLM backend; the Docker sidecar implementation was removed. "
     "Unset MARIN_VLLM_MODE or set it to 'native'."
@@ -43,11 +41,8 @@ _CUDA_TORCH_BACKEND = "cu130"
 _FLASHINFER_SAMPLER_ENV_VAR = "VLLM_USE_FLASHINFER_SAMPLER"
 _AWS_CONFIG_FILE_ENV_VAR = "AWS_CONFIG_FILE"
 
-# A transient Run:ai streamer read fault while loading weights from an ``s3://`` checkpoint exits the
-# vLLM child before it is ready. This libstreamer raise-site text is present in every observed
-# occurrence; other startup failures are permanent and not retried.
+# libstreamer's read-fault text: startup is retried on this, and permanently failed on anything else.
 _RUNAI_STREAMER_READ_MARKER = "could not receive runai_response"
-_DEFAULT_STARTUP_MAX_ATTEMPTS = 3
 
 
 class TransientStartupError(RuntimeError):
@@ -349,8 +344,8 @@ def _tail_file(path: str, max_lines: int) -> str:
 def _native_logs_tail(log_dir: str | None, *, max_lines: int = _NATIVE_LOG_TAIL_LINES) -> str:
     if not log_dir:
         return "<no log directory available for native vLLM server>"
-    stdout_path = os.path.join(log_dir, _STDOUT_LOG)
-    stderr_path = os.path.join(log_dir, _STDERR_LOG)
+    stdout_path = os.path.join(log_dir, "stdout.log")
+    stderr_path = os.path.join(log_dir, "stderr.log")
     return (
         "--- stdout (tail) ---\n"
         f"{_tail_file(stdout_path, max_lines)}\n"
@@ -616,23 +611,19 @@ def _start_vllm_native_server(
     timeout_seconds: int = 3600,
     extra_cli_args: list[str] | None = None,
     launcher: VllmLauncher | None = None,
-    max_attempts: int = _DEFAULT_STARTUP_MAX_ATTEMPTS,
+    max_attempts: int = 3,
     poll_interval_seconds: float = 5,
     backoff: ExponentialBackoff | None = None,
 ) -> VllmServerHandle:
     """Start `vllm serve` as a subprocess and wait until `/v1/models` responds.
 
-    A transient Run:ai streamer read fault during weight loading exits the child before it is ready;
-    up to ``max_attempts`` starts are made. Every attempt draws from one shared ``timeout_seconds``
-    deadline, so readiness waiting across all attempts stays within that budget (per-attempt teardown
-    and inter-attempt backoff can add a little slack). Any startup failure that is not a streamer read
-    fault is raised on the first attempt.
+    Retries up to ``max_attempts`` times on a transient streamer read fault, with all attempts sharing
+    one ``timeout_seconds`` deadline. Any other startup failure is raised on the first attempt.
     """
 
     resolved_port = port if port is not None else 8000
     launcher = launcher or WorkspaceVllm()
-    # Fresh each call (ExponentialBackoff has a mutable counter). Wide jitter de-correlates concurrent
-    # retriers, which hit the streamer fault in the same second.
+    # Fresh per call (mutable counter); wide jitter de-correlates retriers hitting the fault together.
     backoff = backoff or ExponentialBackoff(initial=20.0, maximum=120.0, factor=2.0, jitter=0.9)
 
     cmd: list[str] = [
@@ -663,9 +654,7 @@ def _start_vllm_native_server(
 
     def _attempt() -> VllmServerHandle:
         nonlocal stale_log_dir
-        # Best-effort GC of the previous attempt's logs before the next start. On final failure the
-        # last attempt's directory (referenced by the raised error) is the one that matters; a rare
-        # rmtree failure only leaves an extra temp dir behind, so it must not abort the retry.
+        # Drop the previous attempt's logs; a failed cleanup only leaks a temp dir, so ignore it.
         if stale_log_dir is not None:
             shutil.rmtree(stale_log_dir, ignore_errors=True)
             stale_log_dir = None
@@ -675,8 +664,8 @@ def _start_vllm_native_server(
             raise TimeoutError(f"vLLM startup budget of {timeout_seconds}s exhausted before this attempt.")
 
         log_dir = tempfile.mkdtemp(prefix="vllm_server_")
-        stdout_path = os.path.join(log_dir, _STDOUT_LOG)
-        stderr_path = os.path.join(log_dir, _STDERR_LOG)
+        stdout_path = os.path.join(log_dir, "stdout.log")
+        stderr_path = os.path.join(log_dir, "stderr.log")
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -709,9 +698,7 @@ def _start_vllm_native_server(
                 f"Logs: {log_dir}\n"
                 f"{_native_logs_tail(log_dir)}"
             )
-            # The streamer logs the fault once per rank just before the child exits, so it lands in
-            # the tail already embedded in ``message`` (~200 lines from the end in every observed
-            # failure); classify off that rather than re-reading the full log.
+            # The fault is already in the tail carried by ``message``, so classify off that.
             if _RUNAI_STREAMER_READ_MARKER in message.lower():
                 raise TransientStartupError(message)
             raise RuntimeError(message)
@@ -736,8 +723,7 @@ def _start_vllm_native_server(
             try:
                 handle.stop()
             except Exception:
-                # A wedged accelerator worker can survive SIGKILL and make stop() raise; keep the
-                # original startup failure (which the retry classifier reads) rather than masking it.
+                # Don't let a stop() failure mask the startup failure the classifier needs.
                 logger.warning("vLLM teardown failed after a startup failure", exc_info=True)
             stale_log_dir = log_dir
             raise

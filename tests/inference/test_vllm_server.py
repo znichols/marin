@@ -181,7 +181,7 @@ def _start(launcher: _FakeLauncher, *, timeout_seconds: float = 30) -> VllmServe
 
 
 def test_serves_when_startup_succeeds():
-    # A returned handle means readiness polling reached the fake server's 200 on /v1/models.
+    # A returned handle means the fake server answered /v1/models with 200.
     handle = _start(_FakeLauncher("serve"))
     handle.stop()
 

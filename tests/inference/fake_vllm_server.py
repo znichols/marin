@@ -1,18 +1,15 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Stand-in for the real ``vllm serve`` child, driven by test_vllm_server.py to exercise
-``_start_vllm_native_server``'s startup-retry path without a GPU or a real vLLM.
+"""Fake ``vllm serve`` child for test_vllm_server.py: exercises the startup-retry path with no GPU.
 
-``_FakeLauncher`` passes one mode-argument group first; ``_start_vllm_native_server`` then appends the
-real ``serve <model> ... --port <p>`` arguments, so ``--port`` is read from argv and the rest ignored.
-Each mode records its start in the counter file, letting a test assert how many attempts actually ran.
+``_start_vllm_native_server`` appends ``serve <model> ... --port <p>``, so ``--port`` is read from argv.
 
 Modes:
-  serve                          Answer /v1/models with 200 (a ready server).
-  hang <counter>                 Record the start, then sleep without ever becoming ready.
-  fail <counter> <n> [message]   Record the start; for the first <n> starts print <message> (default:
-                                 the libstreamer read fault) to stderr and exit 1, then serve.
+  serve                          Answer /v1/models with 200.
+  hang <counter>                 Record the start, then sleep without becoming ready.
+  fail <counter> <n> [message]   Record the start; fail the first <n> starts (printing <message>,
+                                 default the libstreamer fault, to stderr), then serve.
 """
 
 import sys
