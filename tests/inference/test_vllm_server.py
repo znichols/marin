@@ -1,10 +1,12 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for native vLLM server log routing.
+"""Tests for the native vLLM server subprocess: log routing and startup retry.
 
 ``_LogPump`` forwards the subprocess's stdout/stderr to the parent's fds and to the on-disk logs,
-routing by severity and flushing/draining on teardown; these exercise that.
+routing by severity and flushing/draining on teardown. A second group covers
+``_start_vllm_native_server``'s bounded retry around a transient Run:ai streamer read fault: it
+retries that fault, fails fast on anything else, and shares one deadline across all attempts.
 """
 
 import os
@@ -16,11 +18,9 @@ import time
 
 import pytest
 from marin.inference.vllm_server import (
-    _NATIVE_LOG_TAIL_LINES,
     TransientStartupError,
     VllmServerHandle,
     _engine_kwargs_to_cli_args,
-    _log_file_contains,
     _LogPump,
     _native_logs_tail,
     _start_vllm_native_server,
@@ -143,7 +143,7 @@ def test_handle_stop_terminates_drains_and_is_idempotent(tmp_path):
     handle.stop(timeout_seconds=5)  # second call must not raise
 
 
-# --- issue #7525: bounded retry around a transient Run:ai streamer read fault during startup ---
+# --- bounded retry around a transient Run:ai streamer read fault during startup ---
 
 # Prints the libstreamer raise-site text the classifier keys on, then exits like the real crash.
 _STREAMER_FAIL_LINE = (
@@ -159,12 +159,12 @@ def _serve_forever_script() -> str:
     return (
         "import sys, http.server\n"
         "port = int(sys.argv[sys.argv.index('--port') + 1])\n"
-        "class H(http.server.BaseHTTPRequestHandler):\n"
+        "class Handler(http.server.BaseHTTPRequestHandler):\n"
         "    def do_GET(self):\n"
         "        self.send_response(200); self.end_headers()\n"
         '        self.wfile.write(b\'{"data": [{"id": "fake-model"}]}\')\n'
         "    def log_message(self, *a): pass\n"
-        "http.server.HTTPServer(('127.0.0.1', port), H).serve_forever()\n"
+        "http.server.HTTPServer(('127.0.0.1', port), Handler).serve_forever()\n"
     )
 
 
@@ -214,21 +214,6 @@ def _record_mkdtemp(monkeypatch) -> list[str]:
     return created
 
 
-def test_log_file_contains_matches_beyond_the_capped_tail(tmp_path):
-    # The marker sits near the top of a log far longer than the tail cap. Classification reads the
-    # whole file, so it is found even though a tail-only view (used for the human-readable message)
-    # would have scrolled past it — the reason classification does not reuse the tail.
-    stderr = tmp_path / "stderr.log"
-    lines = ["ValueError: Could not receive runai_response from libstreamer\n"]
-    lines += [f"teardown noise line {i}\n" for i in range(_NATIVE_LOG_TAIL_LINES * 2)]
-    stderr.write_text("".join(lines))
-    (tmp_path / "stdout.log").write_text("nothing relevant\n")
-
-    assert _log_file_contains(str(tmp_path), "could not receive runai_response")
-    assert "runai_response" not in _native_logs_tail(str(tmp_path))
-    assert not _log_file_contains(str(tmp_path), "cuda out of memory")
-
-
 def test_startup_succeeds_on_first_attempt_without_retry(monkeypatch):
     created = _record_mkdtemp(monkeypatch)
     handle = _start_vllm_native_server(
@@ -240,7 +225,7 @@ def test_startup_succeeds_on_first_attempt_without_retry(monkeypatch):
         backoff=_FAST_BACKOFF,
     )
     try:
-        assert len(created) == 1  # the common path spawns exactly once
+        assert len(created) == 1
     finally:
         handle.stop()
 
@@ -311,13 +296,13 @@ def test_startup_exhausts_attempts_and_preserves_diagnostics(monkeypatch, tmp_pa
 
 def test_startup_hang_times_out_without_retry(monkeypatch):
     # A server that stays alive but never becomes ready is a TimeoutError, not a streamer fault, so it
-    # must not be retried into 3x the wait.
+    # must not be retried into 3x the wait. A sub-second budget keeps the timeout wait short.
     created = _record_mkdtemp(monkeypatch)
     with pytest.raises(TimeoutError):
         _start_vllm_native_server(
             model_name_or_path="fake-model",
             port=_free_port(),
-            timeout_seconds=3,
+            timeout_seconds=0.5,
             launcher=_FakeLauncher("import time; time.sleep(30)"),
             max_attempts=3,
             poll_interval_seconds=0.05,

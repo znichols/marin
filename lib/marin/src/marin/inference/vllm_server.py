@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 import requests
 from rigging.filesystem import marin_prefix
-from rigging.timing import ExponentialBackoff, retry_with_backoff
+from rigging.timing import Deadline, ExponentialBackoff, retry_with_backoff
 
 from marin.evaluation.evaluators.evaluator import ModelConfig
 from marin.inference.config import WORKER_PYTHON_VERSION
@@ -43,15 +43,15 @@ _CUDA_TORCH_BACKEND = "cu130"
 _FLASHINFER_SAMPLER_ENV_VAR = "VLLM_USE_FLASHINFER_SAMPLER"
 _AWS_CONFIG_FILE_ENV_VAR = "AWS_CONFIG_FILE"
 
-# Startup retry for issue #7525: a transient Run:ai streamer read fault while loading weights from an
-# ``s3://`` checkpoint exits the vLLM child before it is ready. This libstreamer raise-site text is
-# present in every observed occurrence; other startup failures are permanent and not retried.
+# A transient Run:ai streamer read fault while loading weights from an ``s3://`` checkpoint exits the
+# vLLM child before it is ready. This libstreamer raise-site text is present in every observed
+# occurrence; other startup failures are permanent and not retried.
 _RUNAI_STREAMER_READ_MARKER = "could not receive runai_response"
 _DEFAULT_STARTUP_MAX_ATTEMPTS = 3
 
 
 class TransientStartupError(RuntimeError):
-    """A vLLM startup failure whose child logs show a Run:ai streamer read fault (issue #7525)."""
+    """A vLLM startup failure whose child logs show a transient Run:ai streamer read fault."""
 
 
 class VllmLauncher(Protocol):
@@ -417,7 +417,7 @@ def _engine_kwargs_to_cli_args(engine_kwargs: dict) -> list[str]:
 def _poll_until_ready(
     server_url: str,
     *,
-    timeout_seconds: int,
+    timeout_seconds: float,
     poll_interval_seconds: float = 5,
     check_alive: Callable[[], None] | None = None,
 ) -> None:
@@ -609,28 +609,10 @@ def _vllm_env() -> dict[str, str]:
 
 
 def _default_startup_backoff() -> ExponentialBackoff:
-    # Wide jitter de-correlates concurrent retriers (the observed failures hit every TP rank in the same
-    # second); the delay is minor beside a multi-minute load and is bounded by the shared deadline.
+    # A fresh instance per call: ExponentialBackoff carries a mutable attempt counter, so it must not
+    # be shared at module scope. Wide jitter de-correlates concurrent retriers (the observed failures
+    # hit every TP rank in the same second); the delay is minor beside a multi-minute load.
     return ExponentialBackoff(initial=20.0, maximum=120.0, factor=2.0, jitter=0.9)
-
-
-def _log_file_contains(log_dir: str, needle: str) -> bool:
-    """True if the child's full (uncapped) stdout/stderr logs contain ``needle`` (case-insensitive).
-
-    Classification reads the whole file rather than the capped tail: a TP=8 crash can push the
-    streamer error past the last :data:`_NATIVE_LOG_TAIL_LINES` lines while it is still on disk.
-    """
-    lowered = needle.lower()
-    for name in (_STDOUT_LOG, _STDERR_LOG):
-        try:
-            with open(os.path.join(log_dir, name), "r") as f:
-                if any(lowered in line.lower() for line in f):
-                    return True
-        except OSError as exc:
-            # An unreadable log means the streamer fault cannot be confirmed, so the failure stays
-            # permanent (not retried); surface that rather than downgrading it silently.
-            logger.warning("could not read %s for streamer-fault classification: %s", name, exc)
-    return False
 
 
 def _start_vllm_native_server(
@@ -647,10 +629,11 @@ def _start_vllm_native_server(
 ) -> VllmServerHandle:
     """Start `vllm serve` as a subprocess and wait until `/v1/models` responds.
 
-    A transient Run:ai streamer read fault during weight loading (issue #7525) exits the child before
-    it is ready; up to ``max_attempts`` starts are made. Every attempt shares one ``timeout_seconds``
-    deadline, so the total never exceeds the caller's endpoint-ready budget. Any startup failure that
-    is not a streamer read fault is raised on the first attempt.
+    A transient Run:ai streamer read fault during weight loading exits the child before it is ready;
+    up to ``max_attempts`` starts are made. Every attempt draws from one shared ``timeout_seconds``
+    deadline, so readiness waiting across all attempts stays within that budget (per-attempt teardown
+    and inter-attempt backoff can add a little slack). Any startup failure that is not a streamer read
+    fault is raised on the first attempt.
     """
 
     resolved_port = port if port is not None else 8000
@@ -680,18 +663,19 @@ def _start_vllm_native_server(
     )
 
     server_url = f"http://{host}:{resolved_port}/v1"
-    deadline = time.monotonic() + timeout_seconds
+    deadline = Deadline.from_seconds(timeout_seconds)
     stale_log_dir: str | None = None
 
     def _attempt() -> VllmServerHandle:
         nonlocal stale_log_dir
-        # The previous attempt's logs are kept only until the next start begins, so on final failure
-        # exactly one directory (the last one, referenced by the raised error) survives on disk.
+        # Best-effort GC of the previous attempt's logs before the next start. On final failure the
+        # last attempt's directory (referenced by the raised error) is the one that matters; a rare
+        # rmtree failure only leaves an extra temp dir behind, so it must not abort the retry.
         if stale_log_dir is not None:
             shutil.rmtree(stale_log_dir, ignore_errors=True)
             stale_log_dir = None
 
-        remaining = int(deadline - time.monotonic())
+        remaining = deadline.remaining_seconds()
         if remaining <= 0:
             raise TimeoutError(f"vLLM startup budget of {timeout_seconds}s exhausted before this attempt.")
 
@@ -730,7 +714,10 @@ def _start_vllm_native_server(
                 f"Logs: {log_dir}\n"
                 f"{_native_logs_tail(log_dir)}"
             )
-            if _log_file_contains(log_dir, _RUNAI_STREAMER_READ_MARKER):
+            # The streamer logs the fault once per rank just before the child exits, so it lands in
+            # the tail already embedded in ``message`` (~200 lines from the end in every observed
+            # failure); classify off that rather than re-reading the full log.
+            if _RUNAI_STREAMER_READ_MARKER in message.lower():
                 raise TransientStartupError(message)
             raise RuntimeError(message)
 
