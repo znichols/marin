@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 # Bounded tail for the failure path and diagnostics(); the full stream reaches the job log, so
 # this is only a convenience snapshot, capped because vLLM logs can be large.
 _NATIVE_LOG_TAIL_LINES = 1000
+_STDOUT_LOG = "stdout.log"
+_STDERR_LOG = "stderr.log"
 _REMOVED_VLLM_MODE_MESSAGE = (
     "MARIN_VLLM_MODE no longer selects a vLLM backend; the Docker sidecar implementation was removed. "
     "Unset MARIN_VLLM_MODE or set it to 'native'."
@@ -347,8 +349,8 @@ def _tail_file(path: str, max_lines: int) -> str:
 def _native_logs_tail(log_dir: str | None, *, max_lines: int = _NATIVE_LOG_TAIL_LINES) -> str:
     if not log_dir:
         return "<no log directory available for native vLLM server>"
-    stdout_path = os.path.join(log_dir, "stdout.log")
-    stderr_path = os.path.join(log_dir, "stderr.log")
+    stdout_path = os.path.join(log_dir, _STDOUT_LOG)
+    stderr_path = os.path.join(log_dir, _STDERR_LOG)
     return (
         "--- stdout (tail) ---\n"
         f"{_tail_file(stdout_path, max_lines)}\n"
@@ -607,13 +609,8 @@ def _vllm_env() -> dict[str, str]:
 
 
 def _default_startup_backoff() -> ExponentialBackoff:
-    """Backoff between vLLM startup retries.
-
-    The delay itself is minor beside a multi-minute weight load; the point is the wide jitter, which
-    de-correlates concurrent retriers (the observed failures hit every TP rank in the same second) and
-    lets the accelerator driver reclaim memory after the worker group is killed. The whole sequence is
-    bounded by the shared startup deadline in :func:`_start_vllm_native_server`.
-    """
+    # Wide jitter de-correlates concurrent retriers (the observed failures hit every TP rank in the same
+    # second); the delay is minor beside a multi-minute load and is bounded by the shared deadline.
     return ExponentialBackoff(initial=20.0, maximum=120.0, factor=2.0, jitter=0.9)
 
 
@@ -624,13 +621,15 @@ def _log_file_contains(log_dir: str, needle: str) -> bool:
     streamer error past the last :data:`_NATIVE_LOG_TAIL_LINES` lines while it is still on disk.
     """
     lowered = needle.lower()
-    for name in ("stdout.log", "stderr.log"):
+    for name in (_STDOUT_LOG, _STDERR_LOG):
         try:
             with open(os.path.join(log_dir, name), "r") as f:
                 if any(lowered in line.lower() for line in f):
                     return True
-        except OSError:
-            continue
+        except OSError as exc:
+            # An unreadable log means the streamer fault cannot be confirmed, so the failure stays
+            # permanent (not retried); surface that rather than downgrading it silently.
+            logger.warning("could not read %s for streamer-fault classification: %s", name, exc)
     return False
 
 
@@ -697,8 +696,8 @@ def _start_vllm_native_server(
             raise TimeoutError(f"vLLM startup budget of {timeout_seconds}s exhausted before this attempt.")
 
         log_dir = tempfile.mkdtemp(prefix="vllm_server_")
-        stdout_path = os.path.join(log_dir, "stdout.log")
-        stderr_path = os.path.join(log_dir, "stderr.log")
+        stdout_path = os.path.join(log_dir, _STDOUT_LOG)
+        stderr_path = os.path.join(log_dir, _STDERR_LOG)
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,

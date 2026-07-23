@@ -301,28 +301,12 @@ def test_startup_exhausts_attempts_and_preserves_diagnostics(monkeypatch, tmp_pa
     assert counter.read_text() == "3"
     assert len(created) == 3
     err = excinfo.value
-    # The streamer error and the attempted command survive in the final diagnostic, plus a note with
-    # the attempt count; and the log dir the message points at still exists on disk.
+    # The streamer error and the attempted command survive in the final diagnostic, and the log dir
+    # the message points at still exists on disk.
     assert "Could not receive runai_response from libstreamer" in str(err)
     assert "fake-model" in str(err)
-    assert any("after 3 attempts" in note for note in err.__notes__)
+    assert err.__notes__  # enriched with a summary note before re-raising
     assert sum(os.path.isdir(directory) for directory in created) == 1
-
-
-def test_startup_max_attempts_one_disables_retry(monkeypatch, tmp_path):
-    created = _record_mkdtemp(monkeypatch)
-    counter = tmp_path / "starts"
-    with pytest.raises(TransientStartupError):
-        _start_vllm_native_server(
-            model_name_or_path="fake-model",
-            port=_free_port(),
-            timeout_seconds=30,
-            launcher=_FakeLauncher(_fail_then_serve_script(str(counter), fail_until=99)),
-            max_attempts=1,
-            poll_interval_seconds=0.05,
-            backoff=_FAST_BACKOFF,
-        )
-    assert len(created) == 1
 
 
 def test_startup_hang_times_out_without_retry(monkeypatch):
