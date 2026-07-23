@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 
 import requests
 from rigging.filesystem import marin_prefix
+from rigging.timing import ExponentialBackoff, retry_with_backoff
 
 from marin.evaluation.evaluators.evaluator import ModelConfig
 from marin.inference.config import WORKER_PYTHON_VERSION
@@ -39,6 +40,16 @@ _RUNAI_STREAMER_REQUIREMENT = "runai-model-streamer[s3]==0.16.0"
 _CUDA_TORCH_BACKEND = "cu130"
 _FLASHINFER_SAMPLER_ENV_VAR = "VLLM_USE_FLASHINFER_SAMPLER"
 _AWS_CONFIG_FILE_ENV_VAR = "AWS_CONFIG_FILE"
+
+# Startup retry for issue #7525: a transient Run:ai streamer read fault while loading weights from an
+# ``s3://`` checkpoint exits the vLLM child before it is ready. This libstreamer raise-site text is
+# present in every observed occurrence; other startup failures are permanent and not retried.
+_RUNAI_STREAMER_READ_MARKER = "could not receive runai_response"
+_DEFAULT_STARTUP_MAX_ATTEMPTS = 3
+
+
+class TransientStartupError(RuntimeError):
+    """A vLLM startup failure whose child logs show a Run:ai streamer read fault (issue #7525)."""
 
 
 class VllmLauncher(Protocol):
@@ -595,6 +606,34 @@ def _vllm_env() -> dict[str, str]:
     return env
 
 
+def _default_startup_backoff() -> ExponentialBackoff:
+    """Backoff between vLLM startup retries.
+
+    The delay itself is minor beside a multi-minute weight load; the point is the wide jitter, which
+    de-correlates concurrent retriers (the observed failures hit every TP rank in the same second) and
+    lets the accelerator driver reclaim memory after the worker group is killed. The whole sequence is
+    bounded by the shared startup deadline in :func:`_start_vllm_native_server`.
+    """
+    return ExponentialBackoff(initial=20.0, maximum=120.0, factor=2.0, jitter=0.9)
+
+
+def _log_file_contains(log_dir: str, needle: str) -> bool:
+    """True if the child's full (uncapped) stdout/stderr logs contain ``needle`` (case-insensitive).
+
+    Classification reads the whole file rather than the capped tail: a TP=8 crash can push the
+    streamer error past the last :data:`_NATIVE_LOG_TAIL_LINES` lines while it is still on disk.
+    """
+    lowered = needle.lower()
+    for name in ("stdout.log", "stderr.log"):
+        try:
+            with open(os.path.join(log_dir, name), "r") as f:
+                if any(lowered in line.lower() for line in f):
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def _start_vllm_native_server(
     *,
     model_name_or_path: str,
@@ -603,11 +642,21 @@ def _start_vllm_native_server(
     timeout_seconds: int = 3600,
     extra_cli_args: list[str] | None = None,
     launcher: VllmLauncher | None = None,
+    max_attempts: int = _DEFAULT_STARTUP_MAX_ATTEMPTS,
+    poll_interval_seconds: float = 5,
+    backoff: ExponentialBackoff | None = None,
 ) -> VllmServerHandle:
-    """Start `vllm serve` as a subprocess and wait until `/v1/models` responds."""
+    """Start `vllm serve` as a subprocess and wait until `/v1/models` responds.
+
+    A transient Run:ai streamer read fault during weight loading (issue #7525) exits the child before
+    it is ready; up to ``max_attempts`` starts are made. Every attempt shares one ``timeout_seconds``
+    deadline, so the total never exceeds the caller's endpoint-ready budget. Any startup failure that
+    is not a streamer read fault is raised on the first attempt.
+    """
 
     resolved_port = port if port is not None else 8000
     launcher = launcher or WorkspaceVllm()
+    backoff = backoff or _default_startup_backoff()
 
     cmd: list[str] = [
         *launcher.command(),
@@ -621,9 +670,6 @@ def _start_vllm_native_server(
         *(extra_cli_args or []),
     ]
 
-    log_dir = tempfile.mkdtemp(prefix="vllm_server_")
-    stdout_path = os.path.join(log_dir, "stdout.log")
-    stderr_path = os.path.join(log_dir, "stderr.log")
     native_env = _vllm_env()
     # A launcher (e.g. the isolated TPU build) may require extra env, such as the
     # vLLM build target; overlay it after the canonical defaults so it wins.
@@ -633,58 +679,101 @@ def _start_vllm_native_server(
         f"TPU_MIN_LOG_LEVEL={native_env.get('TPU_MIN_LOG_LEVEL')} "
         f"TPU_STDERR_LOG_LEVEL={native_env.get('TPU_STDERR_LOG_LEVEL')}"
     )
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        env=native_env,
-        # vLLM can leave EngineCore children alive after the API parent exits; a process group lets cleanup
-        # release the TPU instead of leaving libtpu held by a stale child.
-        start_new_session=True,
-    )
-    # Pump before readiness polling: vLLM logs heavily during the long weight-load/compile, and an
-    # undrained pipe would block the child mid-startup.
-    log_pump = _LogPump(process, stdout_path, stderr_path)
-    log_pump.start()
-    try:
-        process_group_id = os.getpgid(process.pid)
-    except ProcessLookupError:
-        process_group_id = None
 
-    server_url: str = f"http://{host}:{resolved_port}/v1"
+    server_url = f"http://{host}:{resolved_port}/v1"
+    deadline = time.monotonic() + timeout_seconds
+    stale_log_dir: str | None = None
 
-    def _check_process_alive() -> None:
-        if process.poll() is not None:
-            # Child has exited; drain the readers before reading the tail so it has the final lines.
+    def _attempt() -> VllmServerHandle:
+        nonlocal stale_log_dir
+        # The previous attempt's logs are kept only until the next start begins, so on final failure
+        # exactly one directory (the last one, referenced by the raised error) survives on disk.
+        if stale_log_dir is not None:
+            shutil.rmtree(stale_log_dir, ignore_errors=True)
+            stale_log_dir = None
+
+        remaining = int(deadline - time.monotonic())
+        if remaining <= 0:
+            raise TimeoutError(f"vLLM startup budget of {timeout_seconds}s exhausted before this attempt.")
+
+        log_dir = tempfile.mkdtemp(prefix="vllm_server_")
+        stdout_path = os.path.join(log_dir, "stdout.log")
+        stderr_path = os.path.join(log_dir, "stderr.log")
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=native_env,
+            # vLLM can leave EngineCore children alive after the API parent exits; a process group lets cleanup
+            # release the accelerator instead of leaving it held by a stale child.
+            start_new_session=True,
+        )
+        # Pump before readiness polling: vLLM logs heavily during the long weight-load/compile, and an
+        # undrained pipe would block the child mid-startup.
+        log_pump = _LogPump(process, stdout_path, stderr_path)
+        log_pump.start()
+        try:
+            process_group_id = os.getpgid(process.pid)
+        except ProcessLookupError:
+            process_group_id = None
+
+        def _check_process_alive() -> None:
+            if process.poll() is None:
+                return
+            # Child has exited; drain the readers so the on-disk logs hold the final lines.
             log_pump.join(timeout=5)
-            logs = _native_logs_tail(log_dir)
-            raise RuntimeError(
+            message = (
                 "vLLM server process exited before becoming ready.\n"
                 f"Command: {cmd}\n"
                 f"Exit code: {process.returncode}\n"
                 f"Logs: {log_dir}\n"
-                f"{logs}"
+                f"{_native_logs_tail(log_dir)}"
             )
+            if _log_file_contains(log_dir, _RUNAI_STREAMER_READ_MARKER):
+                raise TransientStartupError(message)
+            raise RuntimeError(message)
 
-    handle = VllmServerHandle(
-        server_url=server_url,
-        port=resolved_port,
-        process=process,
-        process_group_id=process_group_id,
-        log_dir=log_dir,
-        log_pump=log_pump,
-    )
+        handle = VllmServerHandle(
+            server_url=server_url,
+            port=resolved_port,
+            process=process,
+            process_group_id=process_group_id,
+            log_dir=log_dir,
+            log_pump=log_pump,
+        )
+
+        try:
+            _poll_until_ready(
+                server_url,
+                timeout_seconds=remaining,
+                poll_interval_seconds=poll_interval_seconds,
+                check_alive=_check_process_alive,
+            )
+        except Exception:
+            try:
+                handle.stop()
+            except Exception:
+                # A wedged accelerator worker can survive SIGKILL and make stop() raise; keep the
+                # original startup failure (which the retry classifier reads) rather than masking it.
+                logger.warning("vLLM teardown failed after a startup failure", exc_info=True)
+            stale_log_dir = log_dir
+            raise
+
+        return handle
 
     try:
-        _poll_until_ready(
-            server_url,
-            timeout_seconds=timeout_seconds,
-            check_alive=_check_process_alive,
+        handle = retry_with_backoff(
+            _attempt,
+            retryable=lambda exc: isinstance(exc, TransientStartupError),
+            max_attempts=max_attempts,
+            max_elapsed=timeout_seconds,
+            backoff=backoff,
+            operation="vllm_startup",
         )
-    except Exception:
-        handle.stop()
+    except TransientStartupError as exc:
+        exc.add_note(f"vLLM startup failed after {max_attempts} attempts (each a transient Run:ai streamer read fault).")
         raise
 
     # Now that the server answers, forward its /metrics (throughput, TTFT, queue depth) to
