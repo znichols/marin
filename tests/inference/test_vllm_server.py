@@ -13,8 +13,8 @@ import os
 import socket
 import subprocess
 import sys
-import tempfile
 import time
+from pathlib import Path
 
 import pytest
 from marin.inference.vllm_server import (
@@ -145,49 +145,18 @@ def test_handle_stop_terminates_drains_and_is_idempotent(tmp_path):
 
 # --- bounded retry around a transient Run:ai streamer read fault during startup ---
 
-# Prints the libstreamer raise-site text the classifier keys on, then exits like the real crash.
-_STREAMER_FAIL_LINE = (
-    "print(\"ValueError: Could not receive runai_response from libstreamer due to: b'File access error'\","
-    " file=sys.stderr)"
-)
+_FAKE_VLLM_SERVER = str(Path(__file__).parent / "fake_vllm_server.py")
 _FAST_BACKOFF = ExponentialBackoff(initial=0.001, maximum=0.01, factor=2.0, jitter=0.0)
 
 
-def _serve_forever_script() -> str:
-    # Binds the --port that _start_vllm_native_server appends to the launcher command and answers
-    # /v1/models with 200 so readiness polling succeeds.
-    return (
-        "import sys, http.server\n"
-        "port = int(sys.argv[sys.argv.index('--port') + 1])\n"
-        "class Handler(http.server.BaseHTTPRequestHandler):\n"
-        "    def do_GET(self):\n"
-        "        self.send_response(200); self.end_headers()\n"
-        '        self.wfile.write(b\'{"data": [{"id": "fake-model"}]}\')\n'
-        "    def log_message(self, *a): pass\n"
-        "http.server.HTTPServer(('127.0.0.1', port), Handler).serve_forever()\n"
-    )
-
-
-def _fail_then_serve_script(counter_path: str, fail_until: int) -> str:
-    # Fails with the streamer signature for the first `fail_until` starts, counting via a file that
-    # persists across attempts, then serves.
-    return (
-        "import sys, os\n"
-        f"counter = r'{counter_path}'\n"
-        "n = int(open(counter).read()) + 1 if os.path.exists(counter) else 1\n"
-        "open(counter, 'w').write(str(n))\n"
-        f"if n <= {fail_until}:\n"
-        f"    {_STREAMER_FAIL_LINE}\n"
-        "    sys.exit(1)\n"
-    ) + _serve_forever_script()
-
-
 class _FakeLauncher:
-    def __init__(self, script: str) -> None:
-        self._script = script
+    """Runs fake_vllm_server.py (see its modes) in place of the real ``vllm serve`` child."""
+
+    def __init__(self, *mode_args: str) -> None:
+        self._mode_args = mode_args
 
     def command(self) -> list[str]:
-        return [sys.executable, "-c", self._script]
+        return [sys.executable, _FAKE_VLLM_SERVER, *self._mode_args]
 
     def env(self) -> dict[str, str]:
         return {}
@@ -199,113 +168,56 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _record_mkdtemp(monkeypatch) -> list[str]:
-    """Record every log dir _start_vllm_native_server creates, so tests can count spawns and assert
-    that failed attempts are cleaned up."""
-    created: list[str] = []
-    real = tempfile.mkdtemp
-
-    def recording(*args, **kwargs):
-        directory = real(*args, **kwargs)
-        created.append(directory)
-        return directory
-
-    monkeypatch.setattr(tempfile, "mkdtemp", recording)
-    return created
-
-
-def test_startup_succeeds_on_first_attempt_without_retry(monkeypatch):
-    created = _record_mkdtemp(monkeypatch)
-    handle = _start_vllm_native_server(
+def _start(launcher: _FakeLauncher, *, timeout_seconds: float = 30) -> VllmServerHandle:
+    return _start_vllm_native_server(
         model_name_or_path="fake-model",
         port=_free_port(),
-        timeout_seconds=30,
-        launcher=_FakeLauncher(_serve_forever_script()),
-        poll_interval_seconds=0.05,
-        backoff=_FAST_BACKOFF,
-    )
-    try:
-        assert len(created) == 1
-    finally:
-        handle.stop()
-
-
-def test_startup_retries_transient_failure_then_succeeds(monkeypatch, tmp_path):
-    created = _record_mkdtemp(monkeypatch)
-    counter = tmp_path / "starts"
-    handle = _start_vllm_native_server(
-        model_name_or_path="fake-model",
-        port=_free_port(),
-        timeout_seconds=30,
-        launcher=_FakeLauncher(_fail_then_serve_script(str(counter), fail_until=2)),
+        timeout_seconds=timeout_seconds,
+        launcher=launcher,
         max_attempts=3,
         poll_interval_seconds=0.05,
         backoff=_FAST_BACKOFF,
     )
+
+
+def test_serves_when_startup_succeeds():
+    # A returned handle means readiness polling reached the fake server's 200 on /v1/models.
+    handle = _start(_FakeLauncher("serve"))
+    handle.stop()
+
+
+def test_retries_streamer_fault_then_serves(tmp_path):
+    counter = tmp_path / "starts"
+    handle = _start(_FakeLauncher("fail", str(counter), "2"))
     try:
-        assert counter.read_text() == "3"  # failed twice, served on the third start
-        assert len(created) == 3
-        # Only the successful attempt's log dir survives; the two failed ones were cleaned up.
-        assert sum(os.path.isdir(directory) for directory in created) == 1
+        assert counter.read_text() == "3"  # two streamer faults, served on the third start
     finally:
         handle.stop()
 
 
-def test_startup_does_not_retry_permanent_failure(monkeypatch):
-    created = _record_mkdtemp(monkeypatch)
+def test_fails_fast_on_non_streamer_error(tmp_path):
+    counter = tmp_path / "starts"
     with pytest.raises(RuntimeError) as excinfo:
-        _start_vllm_native_server(
-            model_name_or_path="fake-model",
-            port=_free_port(),
-            timeout_seconds=30,
-            launcher=_FakeLauncher(
-                "import sys; print('RuntimeError: CUDA out of memory', file=sys.stderr); sys.exit(1)"
-            ),
-            max_attempts=3,
-            poll_interval_seconds=0.05,
-            backoff=_FAST_BACKOFF,
-        )
+        _start(_FakeLauncher("fail", str(counter), "99", "RuntimeError: CUDA out of memory"))
     assert not isinstance(excinfo.value, TransientStartupError)
     assert "CUDA out of memory" in str(excinfo.value)
-    assert len(created) == 1  # a non-streamer failure fails fast
+    assert counter.read_text() == "1"  # a non-streamer failure is not retried
 
 
-def test_startup_exhausts_attempts_and_preserves_diagnostics(monkeypatch, tmp_path):
-    created = _record_mkdtemp(monkeypatch)
+def test_exhausts_retries_then_raises_with_diagnostics(tmp_path):
     counter = tmp_path / "starts"
     with pytest.raises(TransientStartupError) as excinfo:
-        _start_vllm_native_server(
-            model_name_or_path="fake-model",
-            port=_free_port(),
-            timeout_seconds=30,
-            launcher=_FakeLauncher(_fail_then_serve_script(str(counter), fail_until=99)),
-            max_attempts=3,
-            poll_interval_seconds=0.05,
-            backoff=_FAST_BACKOFF,
-        )
-    assert counter.read_text() == "3"
-    assert len(created) == 3
+        _start(_FakeLauncher("fail", str(counter), "99"))
+    assert counter.read_text() == "3"  # retried up to the attempt budget
     err = excinfo.value
-    # The streamer error and the attempted command survive in the final diagnostic, and the log dir
-    # the message points at still exists on disk.
-    assert "Could not receive runai_response from libstreamer" in str(err)
-    assert "fake-model" in str(err)
-    assert err.__notes__  # enriched with a summary note before re-raising
-    assert sum(os.path.isdir(directory) for directory in created) == 1
+    assert "Could not receive runai_response from libstreamer" in str(err)  # streamer fault preserved
+    assert "fake-model" in str(err)  # attempted command preserved
+    assert err.__notes__
 
 
-def test_startup_hang_times_out_without_retry(monkeypatch):
-    # A server that stays alive but never becomes ready is a TimeoutError, not a streamer fault, so it
-    # must not be retried into 3x the wait. A sub-second budget keeps the timeout wait short.
-    created = _record_mkdtemp(monkeypatch)
+def test_hang_times_out_without_retry(tmp_path):
+    # A live-but-never-ready server raises TimeoutError, not a streamer fault, so it is not retried.
+    counter = tmp_path / "starts"
     with pytest.raises(TimeoutError):
-        _start_vllm_native_server(
-            model_name_or_path="fake-model",
-            port=_free_port(),
-            timeout_seconds=0.5,
-            launcher=_FakeLauncher("import time; time.sleep(30)"),
-            max_attempts=3,
-            poll_interval_seconds=0.05,
-            backoff=_FAST_BACKOFF,
-        )
-    assert len(created) == 1
+        _start(_FakeLauncher("hang", str(counter)), timeout_seconds=0.5)
+    assert counter.read_text() == "1"

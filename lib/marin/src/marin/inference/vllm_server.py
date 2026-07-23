@@ -608,13 +608,6 @@ def _vllm_env() -> dict[str, str]:
     return env
 
 
-def _default_startup_backoff() -> ExponentialBackoff:
-    # A fresh instance per call: ExponentialBackoff carries a mutable attempt counter, so it must not
-    # be shared at module scope. Wide jitter de-correlates concurrent retriers (the observed failures
-    # hit every TP rank in the same second); the delay is minor beside a multi-minute load.
-    return ExponentialBackoff(initial=20.0, maximum=120.0, factor=2.0, jitter=0.9)
-
-
 def _start_vllm_native_server(
     *,
     model_name_or_path: str,
@@ -638,7 +631,9 @@ def _start_vllm_native_server(
 
     resolved_port = port if port is not None else 8000
     launcher = launcher or WorkspaceVllm()
-    backoff = backoff or _default_startup_backoff()
+    # Fresh each call (ExponentialBackoff has a mutable counter). Wide jitter de-correlates concurrent
+    # retriers, which hit the streamer fault in the same second.
+    backoff = backoff or ExponentialBackoff(initial=20.0, maximum=120.0, factor=2.0, jitter=0.9)
 
     cmd: list[str] = [
         *launcher.command(),
