@@ -481,6 +481,11 @@ def main(
         vllm_source=vllm_source_enum,
         vllm=VllmEngineConfig(
             max_num_batched_tokens=max_num_batched_tokens,
+            # CoreWeave GPU workers have enough ephemeral disk for a complete
+            # checkpoint. Stage object-store models there instead of using the
+            # RunAI streamer, whose file-access path is not reliable on CUDA.
+            # TPU keeps its supported streaming path.
+            stage_object_store_model_locally=gpu is not None,
             # The in-job vLLM boot budget must cover the same window the client waits, so raising
             # --wait-timeout for a slow-booting model actually takes effect.
             startup_timeout_seconds=int(wait_timeout),

@@ -369,6 +369,18 @@ def test_iris_serve_no_wait_is_an_explicit_opt_out_of_minting(monkeypatch):
     assert "Submitted" in result.output
 
 
+def test_iris_serve_stages_object_store_models_on_gpu_but_not_tpu(monkeypatch):
+    gpu_result, _client, gpu_services, _mint = _invoke_iris_serve(monkeypatch, "--gpu", "H100x8")
+
+    assert gpu_result.exit_code == 0, gpu_result.output
+    assert gpu_services[0].engine.stage_object_store_model_locally
+
+    tpu_result, _client, tpu_services, _mint = _invoke_iris_serve(monkeypatch)
+
+    assert tpu_result.exit_code == 0, tpu_result.output
+    assert not tpu_services[0].engine.stage_object_store_model_locally
+
+
 @pytest.mark.parametrize(
     ("broker_args", "expects_coordinator_region", "expected_worker_regions"),
     [([], True, None), (["--broker"], False, [ANY_REGION])],
