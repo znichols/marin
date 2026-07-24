@@ -44,22 +44,50 @@ def env_vars_from_keys(keys: tuple[str, ...]) -> dict[str, str]:
     return {key: os.environ[key] for key in keys if os.environ.get(key)}
 
 
-def daytona_sdk_env() -> dict[str, str]:
-    """Map the launch env's ``DAYTONA_EVAL_API_KEY`` to the ``DAYTONA_API_KEY`` the Daytona SDK reads.
+def _read_gsm_secret(secret_id: str) -> str:
+    """Read one approved launch secret from the active Google project.
 
-    Empty when the eval key is absent, so an evalchemy-only launch never requires it; a
-    Harbor-on-Daytona launch checks for it up front (see :func:`daytona_eval_api_key`).
+    This remains a launch-host operation: the value is passed only through the
+    orchestrator's environment under the Daytona SDK name and is never written
+    into a config, record, or log.
     """
-    key = os.environ.get(DAYTONA_EVAL_API_KEY_ENV)
-    return {DAYTONA_SDK_API_KEY_ENV: key} if key else {}
+    import google.auth  # noqa: PLC0415 - only Harbor/Daytona launches need this optional dependency.
+    from google.cloud import secretmanager  # noqa: PLC0415
+
+    _, project_id = google.auth.default()
+    if not project_id:
+        raise RuntimeError("Google application-default credentials did not identify a project")
+    response = secretmanager.SecretManagerServiceClient().access_secret_version(
+        request={"name": f"projects/{project_id}/secrets/{secret_id}/versions/latest"}
+    )
+    return response.payload.data.decode("utf-8").strip()
 
 
 def daytona_eval_api_key() -> str:
-    """The Daytona eval key, or a clear error naming the GSM secret to load into the launch env."""
+    """Resolve the Daytona eval key from the environment or its approved GSM secret."""
     key = os.environ.get(DAYTONA_EVAL_API_KEY_ENV)
-    if not key:
+    if key:
+        return key
+    try:
+        key = _read_gsm_secret(DAYTONA_EVAL_API_KEY_ENV)
+    except Exception as exc:
         raise RuntimeError(
-            f"{DAYTONA_EVAL_API_KEY_ENV} is not set; load the Google Secret Manager secret of that name "
-            "into the launch environment before launching a Harbor-on-Daytona eval."
-        )
+            f"could not load {DAYTONA_EVAL_API_KEY_ENV} from Google Secret Manager; "
+            "set the environment variable or authenticate the launch host for the approved secret"
+        ) from exc
+    if not key:
+        raise RuntimeError(f"Google Secret Manager returned an empty {DAYTONA_EVAL_API_KEY_ENV} secret")
     return key
+
+
+def daytona_sdk_env(*, required: bool = False) -> dict[str, str]:
+    """Map the resolved eval credential to the ``DAYTONA_API_KEY`` the SDK reads.
+
+    Evalchemy launches do not require Daytona and retain their no-secret path.
+    A Harbor-on-Daytona launch passes ``required=True`` so it resolves the approved
+    GSM secret automatically when the local environment has not already supplied it.
+    """
+    if required:
+        return {DAYTONA_SDK_API_KEY_ENV: daytona_eval_api_key()}
+    key = os.environ.get(DAYTONA_EVAL_API_KEY_ENV)
+    return {DAYTONA_SDK_API_KEY_ENV: key} if key else {}

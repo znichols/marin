@@ -620,7 +620,7 @@ def launch_group(spec: LaunchSpec, client: IrisClient) -> SubmittedGroup:
             memory="16g" if is_harbor else _ORCHESTRATOR_MEMORY,
             disk=_ORCHESTRATOR_DISK,
         ),
-        environment=EnvironmentSpec(env_vars=env_vars_from_keys(EVAL_ENV_KEYS) | daytona_sdk_env()),
+        environment=EnvironmentSpec(env_vars=env_vars_from_keys(EVAL_ENV_KEYS) | daytona_sdk_env(required=is_harbor)),
         constraints=constraints,
         max_retries_failure=spec.max_retries_failure,
         priority_band=spec.priority,
