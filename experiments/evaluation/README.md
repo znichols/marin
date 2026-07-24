@@ -97,10 +97,12 @@ land in evaldash like every other eval.
 uv run python -m experiments.evaluation.cli launch --model qwen3-8b --evals tb2-lite
 ```
 
-A Daytona-backed Harbor launch resolves `DAYTONA_API_KEY`, then `DAYTONA_EVAL_API_KEY`, then the
-`DAYTONA_EVAL_API_KEY` secret in the `hai-gcp-models` Google Secret Manager project. The resolved
-value is injected only into the evaluation orchestrator. Harbor runs as an isolated `uv` subprocess
-outside the Marin lock.
+Daytona-backed definitions declare one experiment-owned credential specification. A launch first
+uses `DAYTONA_API_KEY` from its environment, then falls back to the `DAYTONA_EVAL_API_KEY` secret in
+the `hai-gcp-models` Google Secret Manager project. `DAYTONA_API_KEY` is the only supported
+environment override; the old `DAYTONA_EVAL_API_KEY` environment alias is not read. The generic
+launcher resolves the declaration immediately before Iris submission, and the isolated Harbor
+subprocess receives that key without inheriting the orchestrator's other credentials.
 
 The Grug OpenCode profile keeps its model and Harbor policy on the unified path:
 

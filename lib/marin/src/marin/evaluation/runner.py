@@ -13,14 +13,9 @@ from iris.client import IrisClient, Job, iris_ctx
 from iris.cluster.constraints import CLUSTER_CONSTRAINT_KEY, Constraint, ConstraintOp, region_constraint
 from iris.cluster.types import Entrypoint, EnvironmentSpec, ResourceSpec
 from rigging.filesystem.s3_compat import configure_coreweave_s3
+from rigging.secrets import SecretSpec, resolve_secret_spec
 
-from marin.evaluation.eval_env import (
-    DAYTONA_ENVIRONMENT_TYPE,
-    EVAL_ENV_KEYS,
-    EVAL_RUNTIME_ENV_KEYS,
-    daytona_sdk_env,
-    env_vars_from_keys,
-)
+from marin.evaluation.eval_env import EVAL_ENV_KEYS, EVAL_RUNTIME_ENV_KEYS, env_vars_from_keys
 from marin.evaluation.hardware import AcceleratorChoice
 from marin.evaluation.model_config import ModelConfig
 from marin.evaluation.records import (
@@ -107,6 +102,7 @@ class EvaluationBatch:
     api_model: str | None
     evaluations: tuple[Evaluation, ...]
     provenance: Provenance
+    secret_env: Mapping[str, SecretSpec] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -353,12 +349,8 @@ def submit_evaluation_batch(batch: EvaluationBatch, client: IrisClient) -> Submi
     elif batch.accelerator.region:
         constraints = [region_constraint([batch.accelerator.region])]
     launch_env = env_vars_from_keys(EVAL_ENV_KEYS)
-    if any(
-        evaluation.identity.eval_ref.harbor is not None
-        and evaluation.identity.eval_ref.harbor.env == DAYTONA_ENVIRONMENT_TYPE
-        for evaluation in batch.evaluations
-    ):
-        launch_env.update(daytona_sdk_env())
+    for name, spec in sorted(batch.secret_env.items()):
+        launch_env[name] = resolve_secret_spec(spec).value
     job = client.submit(
         entrypoint=Entrypoint.from_callable(run_evaluation_batch, batch),
         name=f"eval-{batch.group_id}",

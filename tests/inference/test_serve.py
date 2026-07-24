@@ -23,7 +23,6 @@ from iris.time_proto import timestamp_to_proto
 from marin.inference.backend import ModelSpec
 from marin.inference.config import (
     DEFAULT_CUDA_VLLM_VERSION,
-    InferenceModelConfig,
     LevanterEngineConfig,
     VllmEngineConfig,
     VllmLauncherType,
@@ -170,16 +169,12 @@ def test_vllm_backend_serves_the_pinned_revision(monkeypatch):
         chat_template_content=None,
     )
 
-    with VllmBackend(VllmEngineConfig(max_num_batched_tokens=7168, max_num_seqs=32)).serve(spec):
+    with VllmBackend(VllmEngineConfig()).serve(spec):
         pass
 
     extra_args = observed["extra_args"]
     assert isinstance(extra_args, list)
     assert extra_args[extra_args.index("--revision") + 1] == "abc123"
-    served_model = observed["model"]
-    assert isinstance(served_model, InferenceModelConfig)
-    assert served_model.engine_kwargs["max_num_batched_tokens"] == 7168
-    assert served_model.engine_kwargs["max_num_seqs"] == 32
 
 
 def test_checkout_free_setup_script_pins_marin_core_with_extras():

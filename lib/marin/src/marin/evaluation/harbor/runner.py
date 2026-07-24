@@ -21,15 +21,17 @@ import os
 import re
 import subprocess
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
 
 from fsspec.core import url_to_fs
 from rigging.filesystem import StoragePath, is_remote_path, prefix_join
 
-from marin.evaluation.eval_env import DAYTONA_ENVIRONMENT_TYPE
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
+from marin.evaluation.harbor.driver_config import (
+    HarborDriverConfig,
+    HarborRunConfig,
+)
 from marin.evaluation.records import RunStatus
 from marin.evaluation.runner import EvaluationError, EvaluationOutcome
 from marin.evaluation.samples import EvalSample, Grading, SampleKind, write_sample_parquet
@@ -40,66 +42,34 @@ logger = logging.getLogger(__name__)
 
 # Harbor is run as an external tool in an isolated uv environment (its Daytona SDK carries pre-release
 # pins that do not fit the marin lock). These specs pin what that ephemeral env installs.
-_HARBOR_SPEC = "harbor>=0.8.0"
-_DAYTONA_SPEC = "daytona>=0.200.1"
+_HARBOR_SPEC = "harbor==0.20.1.dev202607240136"
+_DAYTONA_SPEC = "daytona==0.200.2"
 _DRIVER = str(Path(__file__).with_name("trial_driver.py"))
+_DRIVER_PYTHONPATH = str(Path(__file__).parents[3])
+_DRIVER_ENV_KEYS = (
+    "CURL_CA_BUNDLE",
+    "DAYTONA_API_KEY",
+    "HOME",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "PATH",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "TMPDIR",
+    "UV_CACHE_DIR",
+    "XDG_CACHE_HOME",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
 
 # The reward at or above which a Harbor trial counts as solved (rewards are typically 0.0 / 1.0; the
 # margin tolerates float noise).
 SOLVED_REWARD = 0.99
 
 _CANONICAL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-
-_DEFAULT_MODEL_INFO = {
-    "max_input_tokens": 32768,
-    "max_output_tokens": 8192,
-    "input_cost_per_token": 0.0,
-    "output_cost_per_token": 0.0,
-}
-
-
-@dataclass(frozen=True)
-class HarborRetryPolicy:
-    """Retry failed trials unless their exception type is explicitly excluded."""
-
-    max_retries: int = 0
-    exclude_exceptions: tuple[str, ...] = ()
-    wait_multiplier: float = 1.0
-    min_wait_sec: float = 1.0
-    max_wait_sec: float = 60.0
-
-
-@dataclass(frozen=True)
-class HarborEnvironmentPolicy:
-    """Sandbox type, lifecycle, and optional resource overrides for each trial."""
-
-    type: str = DAYTONA_ENVIRONMENT_TYPE
-    force_build: bool = False
-    delete: bool = True
-    override_cpus: int | None = None
-    override_memory_mb: int | None = None
-    override_storage_mb: int | None = None
-    kwargs: Mapping[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class HarborRunConfig:
-    """One Harbor eval of one served model, including its stable trial policy."""
-
-    dataset: str
-    version: str
-    agent: str
-    n_concurrent: int = 4
-    max_output_tokens: int = 8192
-    task_limit: int | None = None
-    n_attempts: int = 1
-    timeout_multiplier: float = 1.0
-    retry: HarborRetryPolicy = field(default_factory=HarborRetryPolicy)
-    environment: HarborEnvironmentPolicy = field(default_factory=HarborEnvironmentPolicy)
-    verifier_max_timeout_sec: float | None = None
-    agent_max_timeout_sec: float | None = None
-    agent_setup_timeout_sec: float | None = None
-    agent_kwargs: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -148,7 +118,7 @@ def canonical_served_name(name: str) -> str:
 
 def _job_name(model: RunningModel, config: HarborRunConfig) -> str:
     """A deterministic Harbor job name so a re-run resumes the previous job's completed trials."""
-    key = f"{config.dataset}|{config.version}|{model.endpoint.model}|{config.agent}|{config.task_limit}"
+    key = f"{config.dataset}|{config.revision}|{model.endpoint.model}|{config.agent.name}|{config.task_limit}"
     digest = hashlib.sha256(key.encode()).hexdigest()[:12]
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", config.dataset)[:32]
     return f"harbor_{safe}_{digest}"
@@ -265,69 +235,9 @@ def _run_driver(config_file: Path) -> None:
         str(config_file),
     ]
     logger.info("running Harbor driver: %s", " ".join(cmd))
-    subprocess.run(cmd, check=True)
-
-
-def _job_config(
-    model: RunningModel,
-    config: HarborRunConfig,
-    *,
-    job_name: str,
-    jobs_dir: Path,
-    dataset_path: Path | None,
-) -> dict[str, Any]:
-    agent_kwargs = dict(config.agent_kwargs)
-    configured_model_info = agent_kwargs.get("model_info") or {}
-    if not isinstance(configured_model_info, Mapping):
-        raise ValueError("Harbor agent model_info must be a mapping")
-    model_info = {
-        **_DEFAULT_MODEL_INFO,
-        **configured_model_info,
-        "max_output_tokens": config.max_output_tokens,
-    }
-    agent_kwargs.update({"api_base": model.endpoint.base_url, "model_info": model_info})
-
-    if dataset_path is not None:
-        dataset = {"path": str(dataset_path), "n_tasks": config.task_limit}
-    else:
-        selector = {"ref": config.version} if "/" in config.dataset else {"version": config.version}
-        dataset = {"name": config.dataset, **selector, "n_tasks": config.task_limit}
-    environment = {
-        "type": config.environment.type,
-        "force_build": config.environment.force_build,
-        "delete": config.environment.delete,
-        "override_cpus": config.environment.override_cpus,
-        "override_memory_mb": config.environment.override_memory_mb,
-        "override_storage_mb": config.environment.override_storage_mb,
-        "kwargs": dict(config.environment.kwargs),
-    }
-    retry = {
-        "max_retries": config.retry.max_retries,
-        "exclude_exceptions": list(config.retry.exclude_exceptions),
-        "wait_multiplier": config.retry.wait_multiplier,
-        "min_wait_sec": config.retry.min_wait_sec,
-        "max_wait_sec": config.retry.max_wait_sec,
-    }
-    agent = {
-        "name": config.agent,
-        "model_name": f"hosted_vllm/{model.endpoint.model}",
-        "max_timeout_sec": config.agent_max_timeout_sec,
-        "override_setup_timeout_sec": config.agent_setup_timeout_sec,
-        "kwargs": agent_kwargs,
-    }
-    verifier = {"max_timeout_sec": config.verifier_max_timeout_sec}
-    return {
-        "job_name": job_name,
-        "jobs_dir": str(jobs_dir),
-        "n_attempts": config.n_attempts,
-        "timeout_multiplier": config.timeout_multiplier,
-        "n_concurrent_trials": config.n_concurrent,
-        "retry": retry,
-        "environment": environment,
-        "verifier": verifier,
-        "agents": [agent],
-        "datasets": [dataset],
-    }
+    driver_env = {key: os.environ[key] for key in _DRIVER_ENV_KEYS if key in os.environ}
+    driver_env["PYTHONPATH"] = _DRIVER_PYTHONPATH
+    subprocess.run(cmd, check=True, env=driver_env)
 
 
 def _upload_trials(job_dir: Path, out_path: str) -> None:
@@ -357,7 +267,7 @@ def run_harbor(
     job_dir = results_dir / job_name
     dataset_path = materialize_harbor_dataset(
         config.dataset,
-        config.version,
+        config.revision,
         workdir,
         hf_token=hf_token,
     )
@@ -367,20 +277,24 @@ def run_harbor(
         if restored:
             logger.info("restored %d completed Harbor trial(s) from %s", restored, output_dir)
 
-    driver_config = {
-        "job_config": _job_config(
-            model,
-            config,
-            job_name=job_name,
-            jobs_dir=results_dir,
-            dataset_path=dataset_path,
-        )
-    }
+    driver_config = HarborDriverConfig(
+        job_name=job_name,
+        jobs_dir=str(results_dir),
+        dataset_path=str(dataset_path) if dataset_path is not None else None,
+        endpoint_url=model.endpoint.base_url,
+        served_model=model.endpoint.model,
+        run=config,
+    )
     config_file = workdir / "driver_config.json"
-    config_file.write_text(json.dumps(driver_config))
+    config_file.write_text(json.dumps(asdict(driver_config)))
     config_file.chmod(0o600)
 
-    logger.info("starting Harbor job %s (dataset=%s env=%s)", job_name, config.dataset, config.environment.type)
+    logger.info(
+        "starting Harbor job %s (dataset=%s env=%s)",
+        job_name,
+        config.dataset,
+        config.environment.environment_type,
+    )
     _run_driver(config_file)
 
     trials = _read_trials(job_dir)

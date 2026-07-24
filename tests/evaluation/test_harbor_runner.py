@@ -3,12 +3,18 @@
 
 import json
 from pathlib import Path
-from unittest.mock import ANY, Mock
 
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
-from marin.evaluation.harbor.runner import (
-    HarborExecutor,
+from marin.evaluation.harbor.driver_config import (
+    HarborAgentConfig,
+    HarborDriverConfig,
+    HarborEnvironmentConfig,
+    HarborRetryConfig,
     HarborRunConfig,
+    HarborVerifierConfig,
+    native_job_config,
+)
+from marin.evaluation.harbor.runner import (
     HarborTrial,
     _restore_completed_trials,
     _upload_trials,
@@ -17,9 +23,6 @@ from marin.evaluation.harbor.runner import (
 )
 from marin.inference.types import OpenAIEndpoint, RunningModel
 from rigging.filesystem import StoragePath
-
-from experiments.evaluation.evals import EVALS
-from experiments.evaluation.models import models
 
 
 def test_materialize_harbor_dataset_downloads_hf_revision_as_local_tasks(tmp_path, monkeypatch):
@@ -82,12 +85,62 @@ def test_harbor_trial_tree_round_trips_object_storage(tmp_path):
     assert (restored / "trial-one" / "agent" / "trajectory.json").read_text() == '{"steps": []}'
 
 
-def test_run_harbor_derives_url_and_served_name_from_running_model(tmp_path, monkeypatch):
+def test_native_job_config_translates_the_external_harbor_contract():
+    config = HarborDriverConfig(
+        job_name="job",
+        jobs_dir="/tmp/jobs",
+        dataset_path=None,
+        endpoint_url="https://iris.example/v1",
+        served_model="served-model",
+        run=HarborRunConfig(
+            dataset="aime",
+            revision="1.0",
+            agent=HarborAgentConfig(
+                name="opencode",
+                max_output_tokens=16384,
+                max_timeout=7200,
+                setup_timeout=600,
+                kwargs={"model_info": {"max_input_tokens": 64512}},
+            ),
+            environment=HarborEnvironmentConfig(
+                environment_type="daytona",
+                cpus=2,
+                memory_mb=8192,
+                storage_mb=8192,
+            ),
+            attempts=3,
+            retry=HarborRetryConfig(max_retries=6, min_wait=2.0, max_wait=90.0),
+            verifier=HarborVerifierConfig(max_timeout=14400),
+        ),
+    )
+
+    native = native_job_config(config)
+
+    assert native["datasets"] == [{"name": "aime", "version": "1.0", "n_tasks": None}]
+    assert native["n_attempts"] == 3
+    assert native["retry"]["min_wait_sec"] == 2.0
+    assert native["retry"]["max_wait_sec"] == 90.0
+    assert native["environment"]["override_cpus"] == 2
+    assert native["environment"]["override_memory_mb"] == 8192
+    assert native["environment"]["override_storage_mb"] == 8192
+    assert native["verifier"]["max_timeout_sec"] == 14400
+    agent = native["agents"][0]
+    assert agent["model_name"] == "hosted_vllm/served-model"
+    assert agent["override_setup_timeout_sec"] == 600
+    assert agent["kwargs"]["api_base"] == "https://iris.example/v1"
+    assert agent["kwargs"]["model_info"]["max_input_tokens"] == 64512
+    assert agent["kwargs"]["model_info"]["max_output_tokens"] == 16384
+
+
+def test_run_harbor_normalizes_a_completed_external_trial(tmp_path, monkeypatch):
     captured: dict = {}
 
-    def run_driver(config_file: Path) -> None:
-        captured.update(json.loads(config_file.read_text())["job_config"])
-        trial_dir = Path(captured["jobs_dir"]) / captured["job_name"] / "trial-one"
+    def run_driver(command, *, check, env) -> None:
+        assert check
+        driver_config = HarborDriverConfig.from_dict(json.loads(Path(command[-1]).read_text()))
+        captured["driver_config"] = driver_config
+        captured["env"] = env
+        trial_dir = Path(driver_config.jobs_dir) / driver_config.job_name / "trial-one"
         trial_dir.mkdir(parents=True, exist_ok=True)
         (trial_dir / "result.json").write_text(
             json.dumps(
@@ -98,8 +151,9 @@ def test_run_harbor_derives_url_and_served_name_from_running_model(tmp_path, mon
             )
         )
 
-    monkeypatch.setattr("marin.evaluation.harbor.runner._run_driver", run_driver)
-    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", Mock(return_value=None))
+    monkeypatch.setattr("marin.evaluation.harbor.runner.subprocess.run", run_driver)
+    monkeypatch.setenv("DAYTONA_API_KEY", "daytona-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-harbor")
     model = RunningModel(
         endpoint=OpenAIEndpoint(
             base_url="https://iris.example/proxy/t/token/serve.model/v1",
@@ -109,74 +163,19 @@ def test_run_harbor_derives_url_and_served_name_from_running_model(tmp_path, mon
 
     result = run_harbor(
         model,
-        HarborRunConfig(dataset=f"toy-{tmp_path.name}", version="1.0", agent="terminus-2"),
+        HarborRunConfig(
+            dataset=f"toy-{tmp_path.name}",
+            revision="1.0",
+            agent=HarborAgentConfig(name="terminus-2"),
+            environment=HarborEnvironmentConfig(environment_type="daytona"),
+        ),
         str(tmp_path),
         hf_token=None,
     )
 
-    assert captured["agents"][0]["model_name"] == "hosted_vllm/qwen3-0.6b"
-    assert captured["agents"][0]["kwargs"]["api_base"] == model.endpoint.base_url
-    assert captured["datasets"] == [{"name": f"toy-{tmp_path.name}", "version": "1.0", "n_tasks": None}]
+    assert captured["driver_config"].endpoint_url == model.endpoint.base_url
+    assert captured["driver_config"].served_model == "qwen3-0.6b"
+    assert captured["env"]["DAYTONA_API_KEY"] == "daytona-key"
+    assert "OPENAI_API_KEY" not in captured["env"]
     assert result.total_trials == 1
     assert result.accuracy == 1.0
-
-
-def test_grug_opencode_policy_binds_the_capped_dataset_and_endpoint(tmp_path, monkeypatch):
-    captured: dict = {}
-
-    def run_driver(config_file: Path) -> None:
-        captured.update(json.loads(config_file.read_text())["job_config"])
-        job_dir = Path(captured["jobs_dir"]) / captured["job_name"]
-        job_dir.mkdir(parents=True, exist_ok=True)
-
-    monkeypatch.setattr("marin.evaluation.harbor.runner._run_driver", run_driver)
-    dataset_root = tmp_path / "dev_set_v2"
-    materialize = Mock(return_value=dataset_root)
-    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", materialize)
-    definition = EVALS["grug-opencode-id"]
-    executor = definition.executor_for(models()["grug-agentic-s3-step1903"], limit=1)
-    assert isinstance(executor, HarborExecutor)
-    model = RunningModel(
-        endpoint=OpenAIEndpoint(
-            base_url="https://iris.example/proxy/t/token/serve.grug/v1",
-            model="grug-agentic-s3-step1903",
-        )
-    )
-
-    run_harbor(model, executor.config, str(tmp_path), hf_token=None)
-
-    materialize.assert_called_once_with(
-        "hf://DCAgent/dev_set_v2",
-        "377118ff3031c934f5a647ae2c425eb74eef3b21",
-        ANY,
-        hf_token=None,
-    )
-    assert captured["n_attempts"] == 3
-    assert captured["n_concurrent_trials"] == 256
-    assert captured["timeout_multiplier"] == 2.0
-    assert captured["retry"]["max_retries"] == 6
-    assert "AgentTimeoutError" in captured["retry"]["exclude_exceptions"]
-    assert captured["environment"] == {
-        "type": "daytona",
-        "force_build": True,
-        "delete": True,
-        "override_cpus": 2,
-        "override_memory_mb": 8192,
-        "override_storage_mb": 8192,
-        "kwargs": {"auto_snapshot": True},
-    }
-    assert captured["verifier"]["max_timeout_sec"] == 14400
-    assert captured["datasets"] == [
-        {
-            "path": str(dataset_root),
-            "n_tasks": 1,
-        }
-    ]
-    agent = captured["agents"][0]
-    assert agent["name"] == "opencode"
-    assert agent["model_name"] == "hosted_vllm/grug-agentic-s3-step1903"
-    assert agent["max_timeout_sec"] == 7200
-    assert agent["override_setup_timeout_sec"] == 600
-    assert agent["kwargs"]["api_base"] == model.endpoint.base_url
-    assert agent["kwargs"]["model_info"]["max_input_tokens"] == 64512
-    assert agent["kwargs"]["trajectory_config"] == {"raw_content": False, "linear_history": True}

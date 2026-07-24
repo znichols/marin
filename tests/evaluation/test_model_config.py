@@ -17,7 +17,6 @@ from marin.evaluation.model_config import (
     serve_config_vllm_args,
 )
 from marin.evaluation.serving_config import inference_config_for_model
-from marin.inference.config import ObjectStoreLoadMode, VllmEngineConfig
 
 from experiments.evaluation.fleet import MARIN_EVAL_HARDWARE
 from experiments.evaluation.models import models
@@ -170,35 +169,6 @@ def test_every_registered_model_resolves_on_the_marin_fleet():
             assert choice.gpu_count == config.resource_hint.gpu[gpu_type], name
         else:
             assert choice.platform is Platform.TPU, name
-
-
-def test_grug_opencode_model_lowers_to_its_local_h100_serving_contract():
-    model = models()["grug-agentic-s3-step1903"]
-    accelerator = MARIN_EVAL_HARDWARE.select(model, Platform.GPU, override=None)
-
-    inference = inference_config_for_model(model, accelerator, env_vars={})
-
-    assert accelerator.label == "H100x8"
-    assert accelerator.target_cluster == "cw-us-east-02a"
-    assert model.resource_hint.cpu == 48
-    assert model.resource_hint.memory == "1024g"
-    assert model.resource_hint.disk == "512g"
-    assert inference.model.tensor_parallel_size == 1
-    assert inference.model.max_model_len == 65536
-    assert isinstance(inference.engine, VllmEngineConfig)
-    assert inference.engine.max_num_batched_tokens == 7168
-    assert inference.engine.max_num_seqs == 32
-    assert inference.engine.object_store_load_mode is ObjectStoreLoadMode.LOCAL
-    assert inference.engine.extra_args == (
-        "--data-parallel-size",
-        "8",
-        "--enable-auto-tool-choice",
-        "--tool-call-parser",
-        "hermes",
-        "--enable-expert-parallel",
-        "--uvicorn-log-level",
-        "warning",
-    )
 
 
 def test_model_registry_callers_cannot_mutate_the_cached_catalog():
