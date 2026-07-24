@@ -4,6 +4,8 @@
 import json
 from pathlib import Path
 
+import pytest
+from fsspec.implementations.memory import MemoryFileSystem
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
 from marin.evaluation.harbor.driver_config import (
     HarborAgentConfig,
@@ -15,14 +17,26 @@ from marin.evaluation.harbor.driver_config import (
     native_job_config,
 )
 from marin.evaluation.harbor.runner import (
+    HarborExecutor,
     HarborTrial,
     _restore_completed_trials,
     _upload_trials,
     _write_samples,
     run_harbor,
 )
+from marin.evaluation.records import RunStatus
+from marin.evaluation.runner import EvaluationError
 from marin.inference.types import OpenAIEndpoint, RunningModel
 from rigging.filesystem import StoragePath
+
+
+def _running_model() -> RunningModel:
+    return RunningModel(
+        endpoint=OpenAIEndpoint(
+            base_url="https://iris.example/proxy/t/token/serve.model/v1",
+            model="qwen3-0.6b",
+        )
+    )
 
 
 def test_materialize_harbor_dataset_downloads_hf_revision_as_local_tasks(tmp_path, monkeypatch):
@@ -69,20 +83,39 @@ def test_write_samples_uses_a_path_safe_name_for_hf_dataset(tmp_path):
     assert Path(path).exists()
 
 
-def test_harbor_trial_tree_round_trips_object_storage(tmp_path):
-    completed_trial = tmp_path / "completed" / "trial-one"
-    (completed_trial / "agent").mkdir(parents=True)
-    (completed_trial / "result.json").write_text('{"task_name": "trial-one"}')
-    (completed_trial / "agent" / "trajectory.json").write_text('{"steps": []}')
-    storage_root = f"memory://{tmp_path.name}/eval"
+@pytest.mark.parametrize("protocol", ["gs", "s3"])
+def test_harbor_trials_round_trip_through_remote_storage(protocol, tmp_path, monkeypatch):
+    class RemoteMemoryFileSystem(MemoryFileSystem):
+        pass
 
-    _upload_trials(completed_trial.parent, storage_root)
+    RemoteMemoryFileSystem.protocol = protocol
+    remote_fs = RemoteMemoryFileSystem()
 
-    stored_result = StoragePath(storage_root) / "harbor_trials" / "trial-one" / "result.json"
-    assert stored_result.read_text() == '{"task_name": "trial-one"}'
-    restored = tmp_path / "restored"
-    assert _restore_completed_trials(storage_root, restored) == 1
-    assert (restored / "trial-one" / "agent" / "trajectory.json").read_text() == '{"steps": []}'
+    def remote_url_to_fs(url: str, **_kwargs):
+        path = StoragePath(url)
+        assert path.scheme == protocol
+        return remote_fs, "/".join(part for part in (path.netloc, path.key) if part)
+
+    monkeypatch.setattr("rigging.filesystem.factory.url_to_fs", remote_url_to_fs)
+
+    trial_dir = tmp_path / "source" / "trial-one"
+    (trial_dir / "agent").mkdir(parents=True)
+    (trial_dir / "result.json").write_text('{"task_name": "trial-one"}')
+    (trial_dir / "agent" / "trajectory.json").write_text('{"steps": []}')
+    incomplete_dir = tmp_path / "source" / "incomplete"
+    incomplete_dir.mkdir()
+    (incomplete_dir / "partial.json").write_text("{}")
+
+    output_dir = f"{protocol}://eval-bucket/run"
+    _upload_trials(trial_dir.parent, output_dir)
+
+    restored_dir = tmp_path / "restored"
+    restored = _restore_completed_trials(output_dir, restored_dir)
+
+    assert restored == 1
+    assert (restored_dir / "trial-one" / "result.json").read_text() == '{"task_name": "trial-one"}'
+    assert (restored_dir / "trial-one" / "agent" / "trajectory.json").read_text() == '{"steps": []}'
+    assert not (restored_dir / "incomplete").exists()
 
 
 def test_native_job_config_translates_the_external_harbor_contract():
@@ -154,12 +187,7 @@ def test_run_harbor_normalizes_a_completed_external_trial(tmp_path, monkeypatch)
     monkeypatch.setattr("marin.evaluation.harbor.runner.subprocess.run", run_driver)
     monkeypatch.setenv("DAYTONA_API_KEY", "daytona-key")
     monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-harbor")
-    model = RunningModel(
-        endpoint=OpenAIEndpoint(
-            base_url="https://iris.example/proxy/t/token/serve.model/v1",
-            model="qwen3-0.6b",
-        )
-    )
+    model = _running_model()
 
     result = run_harbor(
         model,
@@ -179,3 +207,72 @@ def test_run_harbor_normalizes_a_completed_external_trial(tmp_path, monkeypatch)
     assert "OPENAI_API_KEY" not in captured["env"]
     assert result.total_trials == 1
     assert result.accuracy == 1.0
+
+
+def test_harbor_executor_fails_when_trial_contains_exception_info(tmp_path, monkeypatch):
+    def run_driver(command, *, check, env) -> None:
+        assert check and isinstance(env, dict)
+        config = HarborDriverConfig.from_dict(json.loads(Path(command[-1]).read_text()))
+        trial_dir = Path(config.jobs_dir) / config.job_name / "trial-one"
+        trial_dir.mkdir(parents=True, exist_ok=True)
+        (trial_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "task_name": "trial-one",
+                    "verifier_result": {"rewards": {"reward": 0.0}},
+                    "exception_info": {
+                        "exception_type": "AgentError",
+                        "exception_message": "model request failed",
+                    },
+                }
+            )
+        )
+
+    monkeypatch.setattr("marin.evaluation.harbor.runner.subprocess.run", run_driver)
+    executor = HarborExecutor(
+        HarborRunConfig(
+            dataset=f"failed-{tmp_path.name}",
+            revision="1.0",
+            agent=HarborAgentConfig(name="terminus-2"),
+            environment=HarborEnvironmentConfig(environment_type="daytona"),
+        )
+    )
+
+    with pytest.raises(EvaluationError) as exc_info:
+        executor(_running_model(), str(tmp_path), {})
+
+    assert exc_info.value.status is RunStatus.FAILED
+    result = json.loads((tmp_path / "harbor_result.json").read_text())
+    assert result["failed_trials"] == 1
+
+
+def test_harbor_executor_accepts_zero_reward_without_exception_info(tmp_path, monkeypatch):
+    def run_driver(command, *, check, env) -> None:
+        assert check and isinstance(env, dict)
+        config = HarborDriverConfig.from_dict(json.loads(Path(command[-1]).read_text()))
+        trial_dir = Path(config.jobs_dir) / config.job_name / "trial-one"
+        trial_dir.mkdir(parents=True, exist_ok=True)
+        (trial_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "task_name": "trial-one",
+                    "verifier_result": {"rewards": {"reward": 0.0}},
+                }
+            )
+        )
+
+    monkeypatch.setattr("marin.evaluation.harbor.runner.subprocess.run", run_driver)
+    executor = HarborExecutor(
+        HarborRunConfig(
+            dataset=f"zero-{tmp_path.name}",
+            revision="1.0",
+            agent=HarborAgentConfig(name="terminus-2"),
+            environment=HarborEnvironmentConfig(environment_type="daytona"),
+        )
+    )
+
+    outcome = executor(_running_model(), str(tmp_path), {})
+
+    assert outcome.metrics[executor.config.dataset]["accuracy"] == 0.0
+    result = json.loads((tmp_path / "harbor_result.json").read_text())
+    assert result["failed_trials"] == 0
