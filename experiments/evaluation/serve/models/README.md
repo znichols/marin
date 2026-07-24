@@ -29,8 +29,6 @@ serve:                          # ServeConfig -> model-server behavior
   max_num_batched_tokens: null  # vLLM prefill-token budget
   max_num_seqs: null            # concurrent sequence limit
   object_store_load_mode: stream # stream through RunAI, or copy to worker-local disk
-  swap_space_gb: 32             # CPU KV offload passed to vLLM as --swap-space
-  trust_remote_code: true
   hf_overrides: null            # JSON string, e.g. rope-scaling overrides
   limit_mm_per_prompt: null     # JSON string, e.g. '{"image":0,"video":0}' for text-only eval
   tool_call_parser: hermes      # enables --enable-auto-tool-choice + --tool-call-parser
