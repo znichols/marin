@@ -47,3 +47,22 @@ def test_group_submission_carries_the_same_priority_and_retries(monkeypatch):
 
     assert captured["max_retries_failure"] == 6
     assert captured["priority_band"] == 2
+
+
+def test_direct_target_cluster_launch_does_not_create_a_self_federation_constraint(monkeypatch):
+    """A direct RNO controller cannot schedule to itself as a federation peer."""
+    captured = {}
+
+    class _Job:
+        def __str__(self) -> str:
+            return "/test/eval-group"
+
+    class _Client:
+        def submit(self, **kwargs):
+            captured.update(kwargs)
+            return _Job()
+
+    monkeypatch.setattr("experiments.evaluation.launch._git_sha", lambda: "test")
+    launch_group(_spec(model="grug-agentic-s3-step1903", accelerator=None, cluster="cw-rno2a"), _Client())
+
+    assert captured["constraints"] is None

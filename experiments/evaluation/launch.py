@@ -607,7 +607,11 @@ def launch_group(spec: LaunchSpec, client: IrisClient) -> SubmittedGroup:
     params = _group_params(plans, spec, provenance, user)
     is_harbor = plans[0].suite.mechanism is EvalMechanism.HARBOR
     constraints = None
-    if plans[0].accel.target_cluster:
+    # ``target_cluster`` is a federation-placement constraint, not a property
+    # of a direct controller.  Sending cw-rno2a as a peer constraint while the
+    # controller itself is cw-rno2a makes Iris reject the group: it is not one
+    # of its own federation peers.
+    if plans[0].accel.target_cluster and plans[0].accel.target_cluster != spec.cluster:
         constraints = [
             Constraint.create(key=CLUSTER_CONSTRAINT_KEY, op=ConstraintOp.EQ, value=plans[0].accel.target_cluster)
         ]
