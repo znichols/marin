@@ -39,6 +39,10 @@ Everything comes from the per-cluster Iris config (`lib/iris/config/<cluster>.ya
   `provisioning:` as an opaque dict;
   `iac.config` owns the typed schema. (The package is `infra/pulumi/src/iac/`, imported as
   `iac` — a `src/<pkg>` layout mirroring `lib/*/src/<pkg>`.)
+- Grafana's CoreWeave Managed Auth usernames from
+  `provisioning.coreweave.grafana_observer_rbac`. The stack binds those identities to `get`,
+  `list`, and `watch` on Nodes; the standard CoreWeave `read` group omits Nodes. Retain both
+  identities during a token rotation.
 - Kueue's controller-manager memory request and limit default to `2Gi`.
   `manager_memory_limit` accepts larger per-cluster values and rejects values below `2Gi`.
 
@@ -78,13 +82,15 @@ Everything comes from the per-cluster Iris config (`lib/iris/config/<cluster>.ya
   `hai-gcp-models`, the same one `infra/grafana` uses) under your GCP credentials above — no
   separate export needed, just `roles/secretmanager.secretAccessor` on that secret.
 - **Backend login**: `pulumi login gs://marin-iac-state`.
-- **Cluster access** (for the k8s dry-run): the CoreWeave kubeconfig at the path in the
-  cluster's `platform.coreweave.kubeconfig_path` (typically `~/.kube/coreweave-iris`).
+- **Cluster access** (for the k8s dry-run): export `KUBECONFIG` with the CoreWeave kubeconfig
+  path (typically `~/.kube/coreweave-iris`). The provider keeps this execution credential out
+  of Pulumi configuration and state.
 
 ### Making a change
 
 ```bash
 cd infra/pulumi
+export KUBECONFIG=~/.kube/coreweave-iris
 pulumi stack select <cluster>
 pulumi preview
 ```
@@ -94,9 +100,9 @@ or `delete` on a NodePool is not** — it deprovisions a reserved bare-metal fle
 reconcile the program to match reality; never `pulumi up` through a destructive NodePool diff.
 Once the preview is clean, `pulumi up`.
 
-No `KUBECONFIG` export needed anywhere in this flow: `__main__.py` builds the k8s provider with
-an explicit `kubeconfig=`/`context=` read from the cluster's own
-`platform.coreweave.kubeconfig_path`/`kube_context`, never from the env var or your shell's
+`__main__.py` requires `KUBECONFIG` but does not pass it as a provider input, so Pulumi state
+contains neither the machine-local path nor the credential contents. The provider still uses
+the cluster's declared `platform.coreweave.kube_context`; it never relies on the kubeconfig's
 current context.
 
 ### Adopting a new cluster
@@ -134,6 +140,11 @@ pulumi up $targets
 pulumi config rm marin-iac:import
 pulumi up       # normal run, adopt=false now — creates the remaining components fresh
 ```
+
+A CoreWeave token rotation creates a new Managed Auth username (`cwtoken-…`). Append it to
+`grafana_observer_rbac.usernames` in all three cluster configs and run a normal preview/up for
+each stack before switching Grafana to the new token. Remove the old username and update the
+stacks again only after the new Grafana revision passes its bridge checks.
 
 ### Backend
 
