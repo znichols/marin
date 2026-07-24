@@ -43,6 +43,7 @@ def stage_object_store_model_locally(model_path: str) -> str:
     if not model_path.startswith(("s3://", "gs://")):
         return model_path
 
+    logger.info("Enumerating object-store model files for local staging: %s", model_path)
     filesystem, remote_root = url_to_fs(model_path)
     remote_root = remote_root.rstrip("/")
     if not remote_root:
@@ -57,8 +58,9 @@ def stage_object_store_model_locally(model_path: str) -> str:
     if expected_config not in remote_files:
         raise FileNotFoundError(f"Object-store model path has no config.json: {model_path}")
 
+    logger.info("Staging %s object-store model files locally at %s", len(remote_files), destination)
     copied = 0
-    for remote_file in remote_files:
+    for file_index, remote_file in enumerate(remote_files, start=1):
         info = filesystem.info(remote_file)
         if info.get("type") == "directory":
             continue
@@ -74,6 +76,8 @@ def stage_object_store_model_locally(model_path: str) -> str:
         filesystem.get_file(remote_file, str(temporary_file))
         os.replace(temporary_file, local_file)
         copied += 1
+        if copied % 25 == 0:
+            logger.info("Local model staging progress: %s/%s files copied", file_index, len(remote_files))
 
     logger.info("Staged %s object-store model files locally at %s (%s copied)", len(remote_files), destination, copied)
     return str(destination)
