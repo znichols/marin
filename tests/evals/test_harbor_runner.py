@@ -18,3 +18,24 @@ def test_harbor_driver_executes_by_run_path_without_shadowing_harbor_config(monk
     assert command[python_index + 3] == harbor_runner._DRIVER
     assert "runpy.run_path" in harbor_runner._DRIVER_RUNNER
     assert captured["check"] is True
+
+
+def test_materialize_hf_dataset_uses_the_explicit_revision(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_snapshot_download(**kwargs):
+        captured.update(kwargs)
+        return str(tmp_path / "dataset")
+
+    monkeypatch.setattr(harbor_runner, "snapshot_download", fake_snapshot_download)
+
+    result = harbor_runner._materialize_hf_dataset("hf://org/harbor-tasks", "deadbeef", tmp_path)
+
+    assert result == tmp_path / "dataset"
+    assert captured["repo_id"] == "org/harbor-tasks"
+    assert captured["revision"] == "deadbeef"
+    assert captured["repo_type"] == "dataset"
+
+
+def test_non_hf_dataset_does_not_materialize(tmp_path):
+    assert harbor_runner._materialize_hf_dataset("aime", "1.0", tmp_path) is None

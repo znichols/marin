@@ -83,8 +83,8 @@ def test_harbor_policy_rejects_multiple_agents_before_runtime_binding():
 def test_grug_opencode_preset_retains_harbor_policy_and_binds_runtime_endpoint():
     policy = resolve_harbor_policy(
         HarborPolicyDefaults(
-            dataset="DCAgent/dev_set_v2",
-            version="1.0",
+            dataset="hf://open-thoughts/OpenThoughts-TBLite",
+            version="7b70111339b4af23cece95d63aeec1c705790868",
             agent="opencode",
             environment="daytona",
             n_concurrent_trials=256,
@@ -96,13 +96,13 @@ def test_grug_opencode_preset_retains_harbor_policy_and_binds_runtime_endpoint()
 
     assert policy.document["n_attempts"] == 3
     assert policy.document["n_concurrent_trials"] == 256
-    assert policy.version == "1.0"
+    assert policy.version == "7b70111339b4af23cece95d63aeec1c705790868"
     assert policy.document["datasets"] == [
         {
             "path": None,
-            "name": "DCAgent/dev_set_v2",
+            "name": "hf://open-thoughts/OpenThoughts-TBLite",
             "version": None,
-            "ref": "1.0",
+            "ref": "7b70111339b4af23cece95d63aeec1c705790868",
             "registry_url": None,
             "registry_path": None,
             "overwrite": False,
@@ -127,7 +127,10 @@ def test_grug_opencode_preset_retains_harbor_policy_and_binds_runtime_endpoint()
             jobs_dir="/tmp/grug-id-123",
             served_model_name="grug",
             api_base="https://capability.example/secret/v1",
+            dataset_path="/tmp/OpenThoughts-TBLite",
         )
     )
     assert bound.document["agents"][0]["model_name"] == "hosted_vllm/grug"
     assert bound.document["agents"][0]["kwargs"]["api_base"] == "https://capability.example/secret/v1"
+    assert bound.document["datasets"][0]["path"] == "/tmp/OpenThoughts-TBLite"
+    assert bound.document["datasets"][0]["name"] is None

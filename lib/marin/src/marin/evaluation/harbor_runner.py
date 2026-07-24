@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fsspec.core import url_to_fs
+from huggingface_hub import snapshot_download
 from rigging.filesystem import StoragePath, is_remote_path, prefix_join
 
 from marin.evaluation.config_artifacts import HARBOR_CONFIG
@@ -230,6 +231,33 @@ def _run_driver(config_file: Path) -> None:
     subprocess.run(cmd, check=True)
 
 
+def _materialize_hf_dataset(dataset: str, version: str | None, workdir: Path) -> Path | None:
+    """Materialize a pinned ``hf://org/name`` Harbor task tree, if selected.
+
+    The source convention deliberately lives above Harbor's native schema:
+    once fetched, the driver receives only ``DatasetConfig(path=...)``.  This
+    retains support for arbitrary Harbor-format HF datasets without making
+    Harbor depend on Hugging Face or treating a slash-containing HF repo as a
+    Harbor package-registry name.
+    """
+    if not dataset.startswith("hf://"):
+        return None
+    repo_id = dataset.removeprefix("hf://")
+    if not repo_id or "/" not in repo_id:
+        raise ValueError(f"HF Harbor dataset must be hf://org/name, got {dataset!r}")
+    revision = version or None
+    return Path(
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            revision=revision,
+            local_dir=str(workdir / "hf_dataset"),
+            cache_dir=str(workdir / "hf_cache"),
+            token=os.environ.get("HF_TOKEN") or None,
+        )
+    )
+
+
 def _upload_trials(job_dir: Path, out_path: str) -> None:
     """Upload each finished trial directory under ``job_dir`` to ``out_path/harbor_trials`` for resume."""
     for trial_dir in (d for d in job_dir.iterdir() if d.is_dir()):
@@ -255,12 +283,17 @@ def run_harbor_eval(policy: ResolvedHarborPolicy, endpoint: HarborEndpoint, out_
         if restored:
             logger.info("restored %d completed Harbor trial(s) from %s", restored, out_path)
 
+    dataset_path = _materialize_hf_dataset(policy.dataset, policy.version, workdir)
+    if dataset_path is not None:
+        logger.info("materialized Harbor HF dataset %s@%s at %s", policy.dataset, policy.version, dataset_path)
+
     resolved = policy.bind(
         HarborRuntimeBinding(
             job_name=job_name,
             jobs_dir=str(output_dir),
             served_model_name=endpoint.served_model_name,
             api_base=endpoint.api_base,
+            dataset_path=str(dataset_path) if dataset_path is not None else None,
         )
     )
     driver_config = {"job_config": resolved.document}

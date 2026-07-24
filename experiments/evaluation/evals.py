@@ -28,7 +28,10 @@ class EvalMechanism(StrEnum):
 class HarborSpec:
     """A Harbor registry dataset run against the served model.
 
-    ``env`` selects the sandbox backend: ``daytona`` (off-cluster, needs ``DAYTONA_EVAL_API_KEY``),
+    ``dataset`` is either a Harbor registry name or ``hf://org/name`` for an arbitrary
+    Harbor-format task tree on Hugging Face. In the latter case ``version`` must be the immutable
+    Hugging Face revision to materialize. ``env`` selects the sandbox backend:
+    ``daytona`` (off-cluster, needs ``DAYTONA_EVAL_API_KEY``),
     ``local`` (Docker on the worker), or ``iris``. ``agent`` is the Harbor agent that drives each task
     against the served endpoint (``hosted_vllm/<served-name>``). ``max_output_tokens`` is the litellm
     generation budget (distinct from lm-eval's ``max_gen_toks``).
@@ -193,8 +196,8 @@ EVALS: dict[str, EvalSuiteConfig] = {
         name="grug-opencode-id",
         mechanism=EvalMechanism.HARBOR,
         harbor=HarborSpec(
-            dataset="DCAgent/dev_set_v2",
-            version="1.0",
+            dataset="hf://open-thoughts/OpenThoughts-TBLite",
+            version="7b70111339b4af23cece95d63aeec1c705790868",
             agent="opencode",
             env="daytona",
             n_concurrent=256,

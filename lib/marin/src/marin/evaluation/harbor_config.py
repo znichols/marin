@@ -48,6 +48,7 @@ class HarborRuntimeBinding:
     jobs_dir: str
     served_model_name: str
     api_base: str
+    dataset_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,16 @@ class ResolvedHarborPolicy:
         agent["model_name"] = f"hosted_vllm/{runtime.served_model_name}"
         agent["kwargs"] = _deep_merge(dict(kwargs), {"api_base": runtime.api_base})
         bound = dict(self.document)
+        if runtime.dataset_path is not None:
+            # A ``hf://`` source was materialized by Marin before invoking
+            # Harbor.  Harbor itself receives an ordinary local task root, so
+            # all its normal task discovery and verifier behavior is retained.
+            datasets = self.document.get("datasets")
+            if not isinstance(datasets, list) or len(datasets) != 1:
+                raise ValueError("a Marin Harbor launch requires exactly one dataset in its resolved policy")
+            dataset = dict(datasets[0])
+            dataset.update({"path": runtime.dataset_path, "name": None, "version": None, "ref": None})
+            bound["datasets"] = [dataset]
         bound.update({"job_name": runtime.job_name, "jobs_dir": runtime.jobs_dir, "agents": [agent]})
         config = load_config_document(bound)
         canonical = canonical_json(config)
