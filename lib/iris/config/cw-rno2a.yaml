@@ -25,6 +25,11 @@
 # This cluster's identity. Used for token minting and for authenticating to peers.
 name: cw-rno2a
 
+# Public Iris origin used for scoped endpoint capability URLs.  Harbor agents
+# run in Daytona, outside CoreWeave's private network, so they must never be
+# handed the endpoint's in-cluster 10.* address.
+dashboard_url: https://iris-cw-rno2a.oa.dev
+
 # External finelog log server (in-cluster k8s Deployment, namespace `iris`).
 # Resolves to k8s://finelog-cw-rno2a.iris; see lib/finelog/config/cw-rno2a.yaml.
 # Without this the controller falls back to an in-process MemStore (logs lost on

@@ -3,6 +3,10 @@
 
 """The eval group and its later serving child must share the requested Iris policy."""
 
+from pathlib import Path
+
+from iris.cluster.config import load_config
+
 from experiments.evaluation.hardware import Platform
 from experiments.evaluation.launch import LaunchSpec, launch_group, plan_runs
 
@@ -66,3 +70,10 @@ def test_direct_target_cluster_launch_does_not_create_a_self_federation_constrai
     launch_group(_spec(model="grug-agentic-s3-step1903", accelerator=None, cluster="cw-rno2a"), _Client())
 
     assert captured["constraints"] is None
+
+
+def test_rno2a_declares_the_public_origin_needed_by_daytona_harbor_agents():
+    """A Harbor agent outside CoreWeave must receive a minted, public endpoint URL."""
+    config_path = Path(__file__).parents[2] / "lib/iris/config/cw-rno2a.yaml"
+
+    assert load_config(config_path).dashboard_url == "https://iris-cw-rno2a.oa.dev"
