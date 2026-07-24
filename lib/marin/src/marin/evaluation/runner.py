@@ -14,7 +14,13 @@ from iris.cluster.constraints import CLUSTER_CONSTRAINT_KEY, Constraint, Constra
 from iris.cluster.types import Entrypoint, EnvironmentSpec, ResourceSpec
 from rigging.filesystem.s3_compat import configure_coreweave_s3
 
-from marin.evaluation.eval_env import EVAL_ENV_KEYS, EVAL_RUNTIME_ENV_KEYS, daytona_sdk_env, env_vars_from_keys
+from marin.evaluation.eval_env import (
+    DAYTONA_ENVIRONMENT_TYPE,
+    EVAL_ENV_KEYS,
+    EVAL_RUNTIME_ENV_KEYS,
+    daytona_sdk_env,
+    env_vars_from_keys,
+)
 from marin.evaluation.hardware import AcceleratorChoice
 from marin.evaluation.model_config import ModelConfig
 from marin.evaluation.records import (
@@ -348,7 +354,8 @@ def submit_evaluation_batch(batch: EvaluationBatch, client: IrisClient) -> Submi
         constraints = [region_constraint([batch.accelerator.region])]
     launch_env = env_vars_from_keys(EVAL_ENV_KEYS)
     if any(
-        evaluation.identity.eval_ref.harbor is not None and evaluation.identity.eval_ref.harbor.env == "daytona"
+        evaluation.identity.eval_ref.harbor is not None
+        and evaluation.identity.eval_ref.harbor.env == DAYTONA_ENVIRONMENT_TYPE
         for evaluation in batch.evaluations
     ):
         launch_env.update(daytona_sdk_env())

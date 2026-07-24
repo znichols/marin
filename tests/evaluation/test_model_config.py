@@ -153,9 +153,16 @@ def test_grug_opencode_model_lowers_to_its_local_h100_serving_contract():
     assert inference.engine.max_num_batched_tokens == 7168
     assert inference.engine.max_num_seqs == 32
     assert inference.engine.object_store_load_mode is ObjectStoreLoadMode.LOCAL
-    assert "--data-parallel-size" in inference.engine.extra_args
-    assert "--enable-expert-parallel" in inference.engine.extra_args
-    assert "--model-loader-extra-config" not in inference.engine.extra_args
+    assert inference.engine.extra_args == (
+        "--data-parallel-size",
+        "8",
+        "--enable-auto-tool-choice",
+        "--tool-call-parser",
+        "hermes",
+        "--enable-expert-parallel",
+        "--uvicorn-log-level",
+        "warning",
+    )
 
 
 def test_model_registry_callers_cannot_mutate_the_cached_catalog():

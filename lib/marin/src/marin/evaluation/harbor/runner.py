@@ -28,6 +28,7 @@ from typing import Any
 from fsspec.core import url_to_fs
 from rigging.filesystem import StoragePath, is_remote_path, prefix_join
 
+from marin.evaluation.eval_env import DAYTONA_ENVIRONMENT_TYPE
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
 from marin.evaluation.records import RunStatus
 from marin.evaluation.runner import EvaluationError, EvaluationOutcome
@@ -59,7 +60,7 @@ _DEFAULT_MODEL_INFO = {
 
 @dataclass(frozen=True)
 class HarborRetryPolicy:
-    """Retry behavior passed to Harbor's native job configuration."""
+    """Retry failed trials unless their exception type is explicitly excluded."""
 
     max_retries: int = 0
     exclude_exceptions: tuple[str, ...] = ()
@@ -70,9 +71,9 @@ class HarborRetryPolicy:
 
 @dataclass(frozen=True)
 class HarborEnvironmentPolicy:
-    """Sandbox behavior passed to Harbor's native environment configuration."""
+    """Sandbox type, lifecycle, and optional resource overrides for each trial."""
 
-    type: str = "daytona"
+    type: str = DAYTONA_ENVIRONMENT_TYPE
     force_build: bool = False
     delete: bool = True
     override_cpus: int | None = None
@@ -281,8 +282,8 @@ def _job_config(
         raise ValueError("Harbor agent model_info must be a mapping")
     model_info = {
         **_DEFAULT_MODEL_INFO,
-        "max_output_tokens": config.max_output_tokens,
         **configured_model_info,
+        "max_output_tokens": config.max_output_tokens,
     }
     agent_kwargs.update({"api_base": model.endpoint.base_url, "model_info": model_info})
 

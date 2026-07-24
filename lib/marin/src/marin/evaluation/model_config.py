@@ -66,10 +66,10 @@ class ResourceHint:
 class ServeConfig:
     """Model-server behavior independent of scheduler placement.
 
-    ``backend`` selects vLLM or Levanter. Parallelism and context fields become first-class inference
-    model settings. The remaining typed fields map onto ``vllm serve`` flags through
-    :func:`serve_config_vllm_args`; ``vllm_extra_args`` is the escape hatch for flags without a typed
-    field and wins when it names the same option.
+    ``backend`` selects vLLM or Levanter. Parallelism, context, engine limits, and object-store
+    loading become first-class inference settings. The remaining typed vLLM fields map onto
+    ``vllm serve`` flags through :func:`serve_config_vllm_args`; ``vllm_extra_args`` is the escape
+    hatch for flags without a typed field and wins when it names the same option.
 
     When ``auto_overrides`` is true, the lowering path inspects the Hugging Face ``config.json`` to
     fill portable architecture-specific vLLM flags and clamp an explicit context length to the

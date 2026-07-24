@@ -1,9 +1,8 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-from rigging.secrets import ResolvedSecret
-
 from marin.evaluation import eval_env
+from rigging.secrets import ResolvedSecret
 
 
 def test_daytona_sdk_env_prefers_sdk_then_eval_env_before_secret_manager(monkeypatch):

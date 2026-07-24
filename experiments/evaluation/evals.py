@@ -143,7 +143,7 @@ def _agentic_eval(
 
 
 def _grug_opencode_eval() -> HarborDefinition:
-    retry_exceptions = (
+    non_retryable_exceptions = (
         "AgentTimeoutError",
         "AgentEnvironmentTimeoutError",
         "VerifierTimeoutError",
@@ -167,7 +167,7 @@ def _grug_opencode_eval() -> HarborDefinition:
             timeout_multiplier=2.0,
             retry=HarborRetryPolicy(
                 max_retries=6,
-                exclude_exceptions=retry_exceptions,
+                exclude_exceptions=non_retryable_exceptions,
                 wait_multiplier=2.0,
                 min_wait_sec=1.0,
                 max_wait_sec=90.0,
@@ -187,7 +187,6 @@ def _grug_opencode_eval() -> HarborDefinition:
                 "opencode_config": {"compaction": {"auto": False}},
                 "model_info": {
                     "max_input_tokens": 64512,
-                    "max_output_tokens": 16384,
                     "input_cost_per_token": 0.0,
                     "output_cost_per_token": 0.0,
                 },

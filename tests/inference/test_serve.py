@@ -93,7 +93,7 @@ def test_select_tensor_parallel_size(heads, chips, kv_heads, expected):
 @pytest.mark.parametrize(
     ("model", "ttl_days"),
     [
-        ("gs://bucket/ckpt", 14),  # object-store paths are served directly, never mirrored
+        ("gs://bucket/ckpt", 14),  # resolution leaves staging policy to the inference engine
         ("s3://bucket/ckpt", 14),
         ("Qwen/Qwen3-0.6B", 0),  # caching disabled
     ],

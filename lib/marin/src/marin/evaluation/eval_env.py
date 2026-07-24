@@ -1,11 +1,11 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Launch-environment variables forwarded to evaluation jobs.
+"""Credentials and launch-environment variables supplied to evaluation jobs.
 
 An eval job (the group orchestrator, an evalchemy client, a Harbor runner) runs on a cluster worker
-with none of the launcher's ambient credentials. The launcher forwards a fixed allowlist of variables
-from its own environment into the job's :class:`EnvironmentSpec`; this module is that allowlist.
+with none of the launcher's ambient credentials. Most values come from a fixed environment allowlist;
+mechanism-specific helpers may also resolve approved secrets before submission.
 """
 
 import os
@@ -36,6 +36,7 @@ EVAL_ENV_KEYS: tuple[str, ...] = (
 
 DAYTONA_SDK_API_KEY_ENV = "DAYTONA_API_KEY"
 DAYTONA_EVAL_API_KEY_ENV = "DAYTONA_EVAL_API_KEY"
+DAYTONA_ENVIRONMENT_TYPE = "daytona"
 _DAYTONA_GCP_SECRET = "gcp-secret://projects/hai-gcp-models/secrets/DAYTONA_EVAL_API_KEY/versions/latest"
 
 

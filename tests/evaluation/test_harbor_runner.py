@@ -3,6 +3,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
 from marin.evaluation.harbor.runner import HarborExecutor, HarborRunConfig, HarborTrial, _write_samples, run_harbor
@@ -73,7 +74,7 @@ def test_run_harbor_derives_url_and_served_name_from_running_model(tmp_path, mon
         )
 
     monkeypatch.setattr("marin.evaluation.harbor.runner._run_driver", run_driver)
-    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", lambda *args, **kwargs: None)
+    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", Mock(return_value=None))
     model = RunningModel(
         endpoint=OpenAIEndpoint(
             base_url="https://iris.example/proxy/t/token/serve.model/v1",
@@ -104,7 +105,7 @@ def test_grug_opencode_policy_binds_the_capped_dataset_and_endpoint(tmp_path, mo
         job_dir.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr("marin.evaluation.harbor.runner._run_driver", run_driver)
-    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", lambda *args, **kwargs: None)
+    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", Mock(return_value=None))
     definition = EVALS["grug-opencode-id"]
     executor = definition.executor_for(models()["grug-agentic-s3-step1903"], limit=1)
     assert isinstance(executor, HarborExecutor)
