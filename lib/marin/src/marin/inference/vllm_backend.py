@@ -42,6 +42,12 @@ def _reserve_localhost_port(host: str) -> int:
         return int(sock.getsockname()[1])
 
 
+def _served_model_name_args(model: str, extra_args: tuple[str, ...]) -> tuple[str, ...]:
+    """Supply the default served name only when a caller has not explicitly selected one."""
+    has_explicit_name = any(arg == "--served-model-name" or arg.startswith("--served-model-name=") for arg in extra_args)
+    return () if has_explicit_name else ("--served-model-name", model)
+
+
 @contextlib.contextmanager
 def _chat_template_argument(content: str | None) -> Iterator[tuple[str, ...]]:
     if content is None:
@@ -97,8 +103,7 @@ class VllmBackend:
                         if spec.tensor_parallel_size is not None
                         else ()
                     ),
-                    "--served-model-name",
-                    spec.model,
+                    *_served_model_name_args(spec.model, self.config.extra_args),
                     *chat_template_args,
                     *self.config.extra_args,
                 ],

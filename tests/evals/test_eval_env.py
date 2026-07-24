@@ -1,4 +1,8 @@
 # Copyright The Marin Authors
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
+
+# Copyright The Marin Authors
 
 from marin.evaluation import eval_env
 
