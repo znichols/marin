@@ -46,6 +46,10 @@ def test_group_submission_carries_the_same_priority_and_retries(monkeypatch):
             captured.update(kwargs)
             return _Job()
 
+    # Harbor runs require a Daytona control-plane key.  Keep this unit test
+    # hermetic: production resolves the approved GSM secret only when callers
+    # have not supplied the launch-environment value.
+    monkeypatch.setenv("DAYTONA_EVAL_API_KEY", "test-daytona-key")
     monkeypatch.setattr("experiments.evaluation.launch._git_sha", lambda: "test")
     launch_group(_spec(), _Client())
 
@@ -66,6 +70,7 @@ def test_direct_target_cluster_launch_does_not_create_a_self_federation_constrai
             captured.update(kwargs)
             return _Job()
 
+    monkeypatch.setenv("DAYTONA_EVAL_API_KEY", "test-daytona-key")
     monkeypatch.setattr("experiments.evaluation.launch._git_sha", lambda: "test")
     launch_group(_spec(model="grug-agentic-s3-step1903", accelerator=None, cluster="cw-rno2a"), _Client())
 
