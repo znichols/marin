@@ -5,11 +5,12 @@
 
 from collections.abc import Mapping
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from marin.evaluation.hardware import AcceleratorChoice, Platform
 from marin.evaluation.model_config import ModelConfig, ResourceHint
-from marin.evaluation.records import EvalRef, Provenance, RunStatus, read_record
+from marin.evaluation.records import EvalRef, HarborRef, Provenance, RunStatus, read_record
 from marin.evaluation.runner import (
     Evaluation,
     EvaluationBatch,
@@ -17,6 +18,7 @@ from marin.evaluation.runner import (
     EvaluationIdentity,
     EvaluationOutcome,
     evaluate_batch,
+    submit_evaluation_batch,
 )
 from marin.inference.iris import RemoteInferenceSession
 from marin.inference.types import OpenAIEndpoint, RunningModel
@@ -105,3 +107,52 @@ def test_evaluate_batch_persists_failures_and_continues_on_the_same_endpoint(tmp
     assert succeeded.status is RunStatus.SUCCEEDED
     assert succeeded.metrics == {"task": {"accuracy": 0.75}}
     assert (tmp_path / "success" / "endpoint.txt").read_text() == endpoint
+
+
+def test_submit_daytona_batch_injects_the_resolved_sdk_credential(tmp_path, monkeypatch):
+    captured: dict = {}
+
+    class Client:
+        def submit(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(job_id="/eval/job")
+
+    monkeypatch.setattr(
+        "marin.evaluation.runner.daytona_sdk_env",
+        lambda: {"DAYTONA_API_KEY": "resolved-key"},
+    )
+    evaluation = Evaluation(
+        identity=EvaluationIdentity(
+            run_id="run-harbor",
+            created_at="2026-07-24T00:00:00+00:00",
+            output_dir=str(tmp_path / "harbor"),
+            eval_ref=EvalRef(
+                name="harbor",
+                mechanism="harbor",
+                harbor=HarborRef(dataset="dataset", version="1.0", agent="opencode", env="daytona"),
+            ),
+        ),
+        executor=_successful_evaluation,
+    )
+    batch = EvaluationBatch(
+        group_id="group",
+        user="tester",
+        version=None,
+        description=None,
+        records_prefix=str(tmp_path / "records"),
+        model=ModelConfig(
+            name="model",
+            location="org/model",
+            tokenizer="tokenizer",
+            resource_hint=ResourceHint(hbm_gb=3),
+        ),
+        accelerator=AcceleratorChoice(platform=Platform.TPU, tpu_type="v6e-4", region="us-central1"),
+        capability_origin="https://iris.example",
+        api_model="model",
+        evaluations=(evaluation,),
+        provenance=Provenance(git_sha="abc", eval_image="image", launch_host="host"),
+    )
+
+    submit_evaluation_batch(batch, Client())
+
+    assert captured["environment"].env_vars["DAYTONA_API_KEY"] == "resolved-key"

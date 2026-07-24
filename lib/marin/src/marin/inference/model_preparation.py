@@ -3,15 +3,24 @@
 
 """Model path resolution and automatic inference sharding."""
 
+import hashlib
 import json
+import logging
+import os
+import posixpath
+import tempfile
+from pathlib import Path
 
 from levanter.model_cache import resolve_cached_model_path
-from rigging.filesystem import StoragePath
+from rigging.filesystem import StoragePath, url_to_fs
 from transformers import AutoConfig
 
 from marin.inference.vllm_server import _is_object_store_path
 
 _MODEL_CACHE_PREFIX = "quick-serve-models"
+_LOCAL_MODEL_CACHE_DIR = "marin-models"
+
+logger = logging.getLogger(__name__)
 
 
 def select_tensor_parallel_size(
@@ -71,3 +80,44 @@ def resolve_model_path(model: str, cache_ttl_days: int, revision: str | None = N
     )
     # With caching disabled, vLLM receives the bare model plus its separate revision argument.
     return model if resolved == pinned_model else resolved
+
+
+def stage_object_store_model_locally(model: str, staging_root: Path | None = None) -> str:
+    """Copy an object-store model snapshot to deterministic worker-local storage."""
+    if not _is_object_store_path(model):
+        return model
+
+    filesystem, remote_root = url_to_fs(model)
+    remote_root = remote_root.rstrip("/")
+    if not remote_root:
+        raise ValueError(f"Object-store model path must include a checkpoint prefix: {model}")
+
+    remote_entries = filesystem.find(remote_root, detail=True)
+    if not remote_entries:
+        raise FileNotFoundError(f"No files found under object-store model path: {model}")
+    expected_config = f"{remote_root}/config.json"
+    if expected_config not in remote_entries:
+        raise FileNotFoundError(f"Object-store model path has no config.json: {model}")
+
+    cache_root = staging_root or Path(tempfile.gettempdir())
+    destination = cache_root / _LOCAL_MODEL_CACHE_DIR / hashlib.sha256(model.encode()).hexdigest()[:16]
+    logger.info("Staging %d object-store model entries from %s to %s", len(remote_entries), model, destination)
+    copied = 0
+    for remote_file, info in sorted(remote_entries.items()):
+        if info.get("type") == "directory":
+            continue
+        relative = posixpath.relpath(remote_file, remote_root)
+        if relative == os.pardir or relative.startswith(f"{os.pardir}/"):
+            raise ValueError(f"Object-store listing escaped model prefix: {remote_file}")
+        local_file = destination / relative
+        expected_size = info.get("size")
+        if expected_size is not None and local_file.is_file() and local_file.stat().st_size == expected_size:
+            continue
+        local_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary_file = local_file.with_suffix(f"{local_file.suffix}.partial")
+        filesystem.get_file(remote_file, str(temporary_file))
+        os.replace(temporary_file, local_file)
+        copied += 1
+
+    logger.info("Staged object-store model at %s (%d files copied)", destination, copied)
+    return str(destination)

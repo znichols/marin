@@ -23,6 +23,7 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from fsspec.core import url_to_fs
 from rigging.filesystem import StoragePath, is_remote_path, prefix_join
@@ -57,17 +58,47 @@ _DEFAULT_MODEL_INFO = {
 
 
 @dataclass(frozen=True)
+class HarborRetryPolicy:
+    """Retry behavior passed to Harbor's native job configuration."""
+
+    max_retries: int = 0
+    exclude_exceptions: tuple[str, ...] = ()
+    wait_multiplier: float = 1.0
+    min_wait_sec: float = 1.0
+    max_wait_sec: float = 60.0
+
+
+@dataclass(frozen=True)
+class HarborEnvironmentPolicy:
+    """Sandbox behavior passed to Harbor's native environment configuration."""
+
+    type: str = "daytona"
+    force_build: bool = False
+    delete: bool = True
+    override_cpus: int | None = None
+    override_memory_mb: int | None = None
+    override_storage_mb: int | None = None
+    kwargs: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class HarborRunConfig:
-    """One Harbor eval of one served model."""
+    """One Harbor eval of one served model, including its stable trial policy."""
 
     dataset: str
     version: str
     agent: str
-    env: str = "daytona"
     n_concurrent: int = 4
     max_output_tokens: int = 8192
     task_limit: int | None = None
-    agent_kwargs: dict = field(default_factory=dict)
+    n_attempts: int = 1
+    timeout_multiplier: float = 1.0
+    retry: HarborRetryPolicy = field(default_factory=HarborRetryPolicy)
+    environment: HarborEnvironmentPolicy = field(default_factory=HarborEnvironmentPolicy)
+    verifier_max_timeout_sec: float | None = None
+    agent_max_timeout_sec: float | None = None
+    agent_setup_timeout_sec: float | None = None
+    agent_kwargs: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -236,6 +267,68 @@ def _run_driver(config_file: Path) -> None:
     subprocess.run(cmd, check=True)
 
 
+def _job_config(
+    model: RunningModel,
+    config: HarborRunConfig,
+    *,
+    job_name: str,
+    jobs_dir: Path,
+    dataset_path: Path | None,
+) -> dict[str, Any]:
+    agent_kwargs = dict(config.agent_kwargs)
+    configured_model_info = agent_kwargs.get("model_info") or {}
+    if not isinstance(configured_model_info, Mapping):
+        raise ValueError("Harbor agent model_info must be a mapping")
+    model_info = {
+        **_DEFAULT_MODEL_INFO,
+        "max_output_tokens": config.max_output_tokens,
+        **configured_model_info,
+    }
+    agent_kwargs.update({"api_base": model.endpoint.base_url, "model_info": model_info})
+
+    if dataset_path is not None:
+        dataset = {"path": str(dataset_path), "n_tasks": config.task_limit}
+    else:
+        selector = {"ref": config.version} if "/" in config.dataset else {"version": config.version}
+        dataset = {"name": config.dataset, **selector, "n_tasks": config.task_limit}
+    environment = {
+        "type": config.environment.type,
+        "force_build": config.environment.force_build,
+        "delete": config.environment.delete,
+        "override_cpus": config.environment.override_cpus,
+        "override_memory_mb": config.environment.override_memory_mb,
+        "override_storage_mb": config.environment.override_storage_mb,
+        "kwargs": dict(config.environment.kwargs),
+    }
+    retry = {
+        "max_retries": config.retry.max_retries,
+        "exclude_exceptions": list(config.retry.exclude_exceptions),
+        "wait_multiplier": config.retry.wait_multiplier,
+        "min_wait_sec": config.retry.min_wait_sec,
+        "max_wait_sec": config.retry.max_wait_sec,
+    }
+    agent = {
+        "name": config.agent,
+        "model_name": f"hosted_vllm/{model.endpoint.model}",
+        "max_timeout_sec": config.agent_max_timeout_sec,
+        "override_setup_timeout_sec": config.agent_setup_timeout_sec,
+        "kwargs": agent_kwargs,
+    }
+    verifier = {"max_timeout_sec": config.verifier_max_timeout_sec}
+    return {
+        "job_name": job_name,
+        "jobs_dir": str(jobs_dir),
+        "n_attempts": config.n_attempts,
+        "timeout_multiplier": config.timeout_multiplier,
+        "n_concurrent_trials": config.n_concurrent,
+        "retry": retry,
+        "environment": environment,
+        "verifier": verifier,
+        "agents": [agent],
+        "datasets": [dataset],
+    }
+
+
 def _upload_trials(job_dir: Path, out_path: str) -> None:
     """Upload each finished trial directory under ``job_dir`` to ``out_path/harbor_trials`` for resume."""
     for trial_dir in (d for d in job_dir.iterdir() if d.is_dir()):
@@ -273,26 +366,20 @@ def run_harbor(
         if restored:
             logger.info("restored %d completed Harbor trial(s) from %s", restored, output_dir)
 
-    agent_kwargs = dict(config.agent_kwargs)
-    agent_kwargs.setdefault("api_base", model.endpoint.base_url)
-    agent_kwargs.setdefault("model_info", {**_DEFAULT_MODEL_INFO, "max_output_tokens": config.max_output_tokens})
     driver_config = {
-        "job_name": job_name,
-        "jobs_dir": str(results_dir),
-        "dataset": config.dataset,
-        "version": config.version,
-        "dataset_path": str(dataset_path) if dataset_path is not None else None,
-        "n_tasks": config.task_limit,
-        "agent": config.agent,
-        "model_name": f"hosted_vllm/{model.endpoint.model}",
-        "agent_kwargs": agent_kwargs,
-        "n_concurrent": config.n_concurrent,
-        "env": config.env,
+        "job_config": _job_config(
+            model,
+            config,
+            job_name=job_name,
+            jobs_dir=results_dir,
+            dataset_path=dataset_path,
+        )
     }
     config_file = workdir / "driver_config.json"
     config_file.write_text(json.dumps(driver_config))
+    config_file.chmod(0o600)
 
-    logger.info("starting Harbor job %s (dataset=%s env=%s)", job_name, config.dataset, config.env)
+    logger.info("starting Harbor job %s (dataset=%s env=%s)", job_name, config.dataset, config.environment.type)
     _run_driver(config_file)
 
     trials = _read_trials(job_dir)

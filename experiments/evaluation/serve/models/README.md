@@ -26,6 +26,9 @@ serve:                          # ServeConfig -> model-server behavior
   tensor_parallel_size: 2
   data_parallel_size: null
   max_model_len: 32768
+  max_num_batched_tokens: null  # vLLM prefill-token budget
+  max_num_seqs: null            # concurrent sequence limit
+  object_store_load_mode: stream # stream through RunAI, or copy to worker-local disk
   swap_space_gb: 32             # CPU KV offload passed to vLLM as --swap-space
   trust_remote_code: true
   hf_overrides: null            # JSON string, e.g. rope-scaling overrides

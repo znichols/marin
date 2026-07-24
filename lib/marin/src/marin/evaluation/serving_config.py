@@ -136,7 +136,13 @@ def inference_config_for_model(
                 launcher=VllmLauncherType.CUDA,
                 source=VllmSource.MARIN_FORK,
                 startup_timeout_seconds=ENDPOINT_READY_TIMEOUT_SECONDS,
-                max_num_batched_tokens=EVAL_SERVE_MAX_NUM_BATCHED_TOKENS,
+                max_num_batched_tokens=(
+                    serve.max_num_batched_tokens
+                    if serve.max_num_batched_tokens is not None
+                    else EVAL_SERVE_MAX_NUM_BATCHED_TOKENS
+                ),
+                max_num_seqs=serve.max_num_seqs,
+                object_store_load_mode=serve.object_store_load_mode,
                 extra_args=(*extra_args, *_QUIET_VLLM_ARGS),
             )
             environment = create_environment(
@@ -159,7 +165,13 @@ def inference_config_for_model(
         if serve.backend is ServeBackend.VLLM:
             engine = VllmEngineConfig(
                 startup_timeout_seconds=ENDPOINT_READY_TIMEOUT_SECONDS,
-                max_num_batched_tokens=EVAL_SERVE_MAX_NUM_BATCHED_TOKENS,
+                max_num_batched_tokens=(
+                    serve.max_num_batched_tokens
+                    if serve.max_num_batched_tokens is not None
+                    else EVAL_SERVE_MAX_NUM_BATCHED_TOKENS
+                ),
+                max_num_seqs=serve.max_num_seqs,
+                object_store_load_mode=serve.object_store_load_mode,
                 extra_args=(*extra_args, *_QUIET_VLLM_ARGS),
             )
             environment = create_environment(extras=["tpu", "vllm"], env_vars=dict(env_vars))

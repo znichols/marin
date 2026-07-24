@@ -10,7 +10,12 @@ from typing import Protocol
 
 from marin.evaluation.evalchemy.runner import EvalchemyExecutor, EvalchemyRunConfig
 from marin.evaluation.evaluation_config import EvalTaskConfig
-from marin.evaluation.harbor.runner import HarborExecutor, HarborRunConfig
+from marin.evaluation.harbor.runner import (
+    HarborEnvironmentPolicy,
+    HarborExecutor,
+    HarborRetryPolicy,
+    HarborRunConfig,
+)
 from marin.evaluation.model_config import ModelConfig
 from marin.evaluation.records import EvalRef, EvalTaskRef, HarborRef
 from marin.evaluation.runner import EvalExecutor
@@ -73,7 +78,7 @@ class HarborDefinition:
                 dataset=self.config.dataset,
                 version=self.config.version,
                 agent=self.config.agent,
-                env=self.config.env,
+                env=self.config.environment.type,
             ),
         )
 
@@ -131,10 +136,64 @@ def _agentic_eval(
             dataset=f"hf://{hugging_face_dataset}",
             version="main",
             agent=agent,
-            env="daytona",
             n_concurrent=n_concurrent,
         ),
         max_eval_instances=max_instances,
+    )
+
+
+def _grug_opencode_eval() -> HarborDefinition:
+    retry_exceptions = (
+        "AgentTimeoutError",
+        "AgentEnvironmentTimeoutError",
+        "VerifierTimeoutError",
+        "RewardFileNotFoundError",
+        "RewardFileEmptyError",
+        "VerifierOutputParseError",
+        "SandboxBuildFailedError",
+        "VerifierRuntimeError",
+        "SummarizationTimeoutError",
+        "ContextLengthExceededError",
+    )
+    return HarborDefinition(
+        name="grug-opencode-id",
+        config=HarborRunConfig(
+            dataset="DCAgent/dev_set_v2",
+            version="1.0",
+            agent="opencode",
+            n_concurrent=256,
+            max_output_tokens=16384,
+            n_attempts=3,
+            timeout_multiplier=2.0,
+            retry=HarborRetryPolicy(
+                max_retries=6,
+                exclude_exceptions=retry_exceptions,
+                wait_multiplier=2.0,
+                min_wait_sec=1.0,
+                max_wait_sec=90.0,
+            ),
+            environment=HarborEnvironmentPolicy(
+                force_build=True,
+                delete=True,
+                override_cpus=2,
+                override_memory_mb=8192,
+                override_storage_mb=8192,
+                kwargs={"auto_snapshot": True},
+            ),
+            verifier_max_timeout_sec=14400,
+            agent_max_timeout_sec=7200,
+            agent_setup_timeout_sec=600,
+            agent_kwargs={
+                "opencode_config": {"compaction": {"auto": False}},
+                "model_info": {
+                    "max_input_tokens": 64512,
+                    "max_output_tokens": 16384,
+                    "input_cost_per_token": 0.0,
+                    "output_cost_per_token": 0.0,
+                },
+                "trajectory_config": {"raw_content": False, "linear_history": True},
+            },
+        ),
     )
 
 
@@ -244,6 +303,7 @@ EVALS: dict[str, EvaluationDefinition] = {
     "aider": _agentic_eval("aider", "DCAgent2/aider_polyglot", n_concurrent=_AGENTIC_CONCURRENCY),
     "medagentbench": _agentic_eval("medagentbench", "DCAgent/medagentbench", n_concurrent=_AGENTIC_CONCURRENCY),
     "financeagent": _agentic_eval("financeagent", "DCAgent/financeagent_terminal", n_concurrent=16),
+    "grug-opencode-id": _grug_opencode_eval(),
 }
 
 # A fast cluster smoke: one small MCQ cut plus a capped gsm8k generation task.

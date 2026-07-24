@@ -28,6 +28,7 @@ from marin.inference.config import (
     BrokerConfig,
     IrisConfig,
     LevanterEngineConfig,
+    ObjectStoreLoadMode,
     RemoteInferenceConfig,
     ServedModelConfig,
     VllmEngineConfig,
@@ -118,15 +119,22 @@ def _accelerator_label(iris: IrisConfig) -> str:
     return device.variant
 
 
-def _resolved_model(model: ServedModelConfig, iris: IrisConfig) -> tuple[ServedModelConfig, int]:
+def _resolved_model(
+    model: ServedModelConfig,
+    engine: VllmEngineConfig | LevanterEngineConfig,
+    iris: IrisConfig,
+) -> tuple[ServedModelConfig, int]:
     # Keep model-cache and Transformers imports inside accelerator workers.
     from marin.inference.model_preparation import (  # noqa: PLC0415
         read_attention_heads,
         resolve_model_path,
         select_tensor_parallel_size,
+        stage_object_store_model_locally,
     )
 
     weights = resolve_model_path(model.weights, iris.cache_ttl_days, model.revision)
+    if isinstance(engine, VllmEngineConfig) and engine.object_store_load_mode is ObjectStoreLoadMode.LOCAL:
+        weights = stage_object_store_model_locally(weights)
     num_chips = iris.worker_resources.device.chip_count()
     tensor_parallel_size = model.tensor_parallel_size
     revision = model.revision if weights == model.weights else None
@@ -142,7 +150,7 @@ def _prepared_local_inference(
     engine: VllmEngineConfig | LevanterEngineConfig,
     iris: IrisConfig,
 ) -> Iterator[LocalInferenceSession]:
-    resolved_model, num_chips = _resolved_model(model, iris)
+    resolved_model, num_chips = _resolved_model(model, engine, iris)
     with local_inference(resolved_model, engine, num_chips=num_chips) as session:
         yield session
 

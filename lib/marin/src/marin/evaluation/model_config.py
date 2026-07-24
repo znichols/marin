@@ -13,6 +13,8 @@ from pathlib import Path
 import draccus
 from rigging.filesystem import StoragePath
 
+from marin.inference.config import ObjectStoreLoadMode
+
 
 class ServeBackend(StrEnum):
     """Inference backend used for evaluation."""
@@ -78,6 +80,9 @@ class ServeConfig:
     tensor_parallel_size: int | None = None
     data_parallel_size: int | None = None
     max_model_len: int | None = None
+    max_num_batched_tokens: int | None = None
+    max_num_seqs: int | None = None
+    object_store_load_mode: ObjectStoreLoadMode = ObjectStoreLoadMode.STREAM
     swap_space_gb: int | None = None
     trust_remote_code: bool = False
     hf_overrides: str | None = None

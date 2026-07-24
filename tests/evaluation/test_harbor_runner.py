@@ -5,8 +5,11 @@ import json
 from pathlib import Path
 
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
-from marin.evaluation.harbor.runner import HarborRunConfig, HarborTrial, _write_samples, run_harbor
+from marin.evaluation.harbor.runner import HarborExecutor, HarborRunConfig, HarborTrial, _write_samples, run_harbor
 from marin.inference.types import OpenAIEndpoint, RunningModel
+
+from experiments.evaluation.evals import EVALS
+from experiments.evaluation.models import models
 
 
 def test_materialize_harbor_dataset_downloads_hf_revision_as_local_tasks(tmp_path, monkeypatch):
@@ -57,7 +60,7 @@ def test_run_harbor_derives_url_and_served_name_from_running_model(tmp_path, mon
     captured: dict = {}
 
     def run_driver(config_file: Path) -> None:
-        captured.update(json.loads(config_file.read_text()))
+        captured.update(json.loads(config_file.read_text())["job_config"])
         trial_dir = Path(captured["jobs_dir"]) / captured["job_name"] / "trial-one"
         trial_dir.mkdir(parents=True, exist_ok=True)
         (trial_dir / "result.json").write_text(
@@ -85,7 +88,62 @@ def test_run_harbor_derives_url_and_served_name_from_running_model(tmp_path, mon
         hf_token=None,
     )
 
-    assert captured["model_name"] == "hosted_vllm/qwen3-0.6b"
-    assert captured["agent_kwargs"]["api_base"] == model.endpoint.base_url
+    assert captured["agents"][0]["model_name"] == "hosted_vllm/qwen3-0.6b"
+    assert captured["agents"][0]["kwargs"]["api_base"] == model.endpoint.base_url
+    assert captured["datasets"] == [{"name": f"toy-{tmp_path.name}", "version": "1.0", "n_tasks": None}]
     assert result.total_trials == 1
     assert result.accuracy == 1.0
+
+
+def test_grug_opencode_policy_binds_the_capped_dataset_and_endpoint(tmp_path, monkeypatch):
+    captured: dict = {}
+
+    def run_driver(config_file: Path) -> None:
+        captured.update(json.loads(config_file.read_text())["job_config"])
+        job_dir = Path(captured["jobs_dir"]) / captured["job_name"]
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("marin.evaluation.harbor.runner._run_driver", run_driver)
+    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", lambda *args, **kwargs: None)
+    definition = EVALS["grug-opencode-id"]
+    executor = definition.executor_for(models()["grug-agentic-s3-step1903"], limit=1)
+    assert isinstance(executor, HarborExecutor)
+    model = RunningModel(
+        endpoint=OpenAIEndpoint(
+            base_url="https://iris.example/proxy/t/token/serve.grug/v1",
+            model="grug-agentic-s3-step1903",
+        )
+    )
+
+    run_harbor(model, executor.config, str(tmp_path), hf_token=None)
+
+    assert captured["n_attempts"] == 3
+    assert captured["n_concurrent_trials"] == 256
+    assert captured["timeout_multiplier"] == 2.0
+    assert captured["retry"]["max_retries"] == 6
+    assert "AgentTimeoutError" in captured["retry"]["exclude_exceptions"]
+    assert captured["environment"] == {
+        "type": "daytona",
+        "force_build": True,
+        "delete": True,
+        "override_cpus": 2,
+        "override_memory_mb": 8192,
+        "override_storage_mb": 8192,
+        "kwargs": {"auto_snapshot": True},
+    }
+    assert captured["verifier"]["max_timeout_sec"] == 14400
+    assert captured["datasets"] == [
+        {
+            "name": "DCAgent/dev_set_v2",
+            "ref": "1.0",
+            "n_tasks": 1,
+        }
+    ]
+    agent = captured["agents"][0]
+    assert agent["name"] == "opencode"
+    assert agent["model_name"] == "hosted_vllm/grug-agentic-s3-step1903"
+    assert agent["max_timeout_sec"] == 7200
+    assert agent["override_setup_timeout_sec"] == 600
+    assert agent["kwargs"]["api_base"] == model.endpoint.base_url
+    assert agent["kwargs"]["model_info"]["max_input_tokens"] == 64512
+    assert agent["kwargs"]["trajectory_config"] == {"raw_content": False, "linear_history": True}
