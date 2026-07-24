@@ -35,6 +35,7 @@ def test_materialize_hf_dataset_uses_the_explicit_revision(monkeypatch, tmp_path
     assert captured["repo_id"] == "org/harbor-tasks"
     assert captured["revision"] == "deadbeef"
     assert captured["repo_type"] == "dataset"
+    assert captured["max_workers"] == 1
 
 
 def test_non_hf_dataset_does_not_materialize(tmp_path):

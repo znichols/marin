@@ -254,6 +254,12 @@ def _materialize_hf_dataset(dataset: str, version: str | None, workdir: Path) ->
             local_dir=str(workdir / "hf_dataset"),
             cache_dir=str(workdir / "hf_cache"),
             token=os.environ.get("HF_TOKEN") or None,
+            # Harbor task trees contain hundreds of small files.  Concurrent
+            # metadata HEADs routinely trip the Hub's shared rate limit from a
+            # CoreWeave pod, before any trials begin.  The dataset is staged
+            # once per eval group, so bounded serial transfer is the reliable
+            # trade-off and still resumes from the local cache on retry.
+            max_workers=1,
         )
     )
 
