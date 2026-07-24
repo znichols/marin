@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 _HARBOR_SPEC = HARBOR_CONFIG.source_requirement
 _DAYTONA_SPEC = "daytona>=0.200.1"
 _DRIVER = str(Path(__file__).with_name("harbor_trial_driver.py"))
+# Do not invoke the driver as ``python path/to/harbor_trial_driver.py``: Python prepends that
+# directory to ``sys.path``, which shadows Harbor's top-level ``harbor_config`` package with this
+# package's adjacent ``marin.evaluation.harbor_config`` module. ``run_path`` executes the exact
+# checked-in driver without changing import precedence.
+_DRIVER_RUNNER = (
+    "import runpy, sys; driver, config = sys.argv[1:]; "
+    "sys.argv = [driver, config]; runpy.run_path(driver, run_name='__main__')"
+)
 
 # The reward at or above which a Harbor trial counts as solved (rewards are typically 0.0 / 1.0; the
 # margin tolerates float noise).
@@ -213,6 +221,8 @@ def _run_driver(config_file: Path) -> None:
         "--with",
         _DAYTONA_SPEC,
         "python",
+        "-c",
+        _DRIVER_RUNNER,
         _DRIVER,
         str(config_file),
     ]
