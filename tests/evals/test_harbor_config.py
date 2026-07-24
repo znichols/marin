@@ -96,6 +96,21 @@ def test_grug_opencode_preset_retains_harbor_policy_and_binds_runtime_endpoint()
 
     assert policy.document["n_attempts"] == 3
     assert policy.document["n_concurrent_trials"] == 256
+    assert policy.document["datasets"] == [
+        {
+            "path": None,
+            "name": "DCAgent/dev_set_v2",
+            "version": None,
+            "ref": "1.0",
+            "registry_url": None,
+            "registry_path": None,
+            "overwrite": False,
+            "download_dir": None,
+            "task_names": None,
+            "exclude_task_names": None,
+            "n_tasks": None,
+        }
+    ]
     assert policy.document["retry"]["max_retries"] == 6
     assert policy.document["verifier"]["max_timeout_sec"] == 14400
     assert policy.document["agents"][0]["kwargs"]["model_info"] == {

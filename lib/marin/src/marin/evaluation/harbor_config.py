@@ -198,7 +198,15 @@ def _apply_selection(
     dataset = dict(datasets[0])
     dataset.pop("path", None)
     dataset.pop("ref", None)
-    dataset.update({"name": defaults.dataset, "version": defaults.version})
+    dataset.pop("version", None)
+    dataset["name"] = defaults.dataset
+    # Harbor has two registry backends.  Package datasets (``org/name``) resolve a
+    # content/tag selector through ``ref``, while legacy registry datasets resolve
+    # through ``version``.  Supplying ``version`` to a package dataset silently
+    # falls back to ``latest`` in Harbor, so select the field with the same rule as
+    # Harbor's DatasetConfig rather than relying on a backend-specific default.
+    selector_field = "ref" if "/" in defaults.dataset else "version"
+    dataset[selector_field] = defaults.version
     if task_limit_override is not None:
         dataset["n_tasks"] = task_limit_override
     selected = dict(document)
