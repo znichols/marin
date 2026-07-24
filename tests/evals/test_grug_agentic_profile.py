@@ -67,5 +67,6 @@ def test_grug_agentic_profile_materializes_one_sequence_limit_in_the_vllm_engine
     )
     engine_args = inference.engine.extra_args
 
+    assert inference.engine.stage_object_store_model_locally
     assert engine_args.count("--max-num-seqs") == 1
     assert engine_args[engine_args.index("--max-num-seqs") + 1] == "32"

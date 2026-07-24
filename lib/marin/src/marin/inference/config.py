@@ -58,6 +58,10 @@ class VllmEngineConfig:
     version: str | None = None
     startup_timeout_seconds: int = 1800
     max_num_batched_tokens: int | None = None
+    # CUDA/CoreWeave workers have ample local ephemeral disk.  Stage object-store
+    # checkpoints there before starting vLLM rather than relying on the optional
+    # RunAI streaming extension, whose file-access path is not reliable there.
+    stage_object_store_model_locally: bool = False
     extra_args: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:

@@ -343,6 +343,9 @@ def _shared_inference_config(model: str, tokenizer: str, spec: ServeSpec) -> _In
                 source=VllmSource.MARIN_FORK,
                 startup_timeout_seconds=int(ENDPOINT_READY_TIMEOUT_SECONDS),
                 max_num_batched_tokens=spec.max_num_batched_tokens,
+                # CoreWeave GPU pods have local disk reserved by ServeSpec.  A
+                # complete local copy avoids RunAI streamer file-access failures.
+                stage_object_store_model_locally=True,
                 extra_args=(*vllm_extra_args, *_QUIET_VLLM_ARGS),
             )
             environment = create_environment(

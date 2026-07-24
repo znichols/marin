@@ -4,11 +4,16 @@
 """vLLM local inference backend."""
 
 import contextlib
+import hashlib
+import logging
 import os
 import socket
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
+
+from fsspec.core import url_to_fs
 
 from marin.evaluation.evaluators.evaluator import ModelConfig
 from marin.inference.backend import OPENAI_API_SUFFIX, ModelSpec
@@ -22,6 +27,56 @@ from marin.inference.vllm_server import (
     VllmType,
     WorkspaceVllm,
 )
+
+logger = logging.getLogger(__name__)
+_LOCAL_MODEL_STAGING_ROOT_ENV = "MARIN_LOCAL_MODEL_STAGING_ROOT"
+
+
+def stage_object_store_model_locally(model_path: str) -> str:
+    """Materialize an fsspec object-store model directory on this worker's disk.
+
+    CUDA eval pods on CoreWeave reserve enough ephemeral disk for a complete
+    checkpoint.  Local staging is deliberately performed before vLLM starts so
+    its normal local-file loader is used instead of the RunAI streaming plugin.
+    The deterministic path also makes a retry within the same pod resumable.
+    """
+    if not model_path.startswith(("s3://", "gs://")):
+        return model_path
+
+    filesystem, remote_root = url_to_fs(model_path)
+    remote_root = remote_root.rstrip("/")
+    if not remote_root:
+        raise ValueError(f"Object-store model path must include a checkpoint prefix: {model_path}")
+    remote_files = sorted(filesystem.find(remote_root))
+    if not remote_files:
+        raise FileNotFoundError(f"No files found under object-store model path: {model_path}")
+
+    cache_root = Path(os.environ.get(_LOCAL_MODEL_STAGING_ROOT_ENV, tempfile.gettempdir())) / "marin-models"
+    destination = cache_root / hashlib.sha256(model_path.encode()).hexdigest()[:16]
+    expected_config = f"{remote_root}/config.json"
+    if expected_config not in remote_files:
+        raise FileNotFoundError(f"Object-store model path has no config.json: {model_path}")
+
+    copied = 0
+    for remote_file in remote_files:
+        info = filesystem.info(remote_file)
+        if info.get("type") == "directory":
+            continue
+        relative = os.path.relpath(remote_file, remote_root)
+        if relative == os.pardir or relative.startswith(f"{os.pardir}{os.sep}"):
+            raise ValueError(f"Object-store listing escaped model prefix: {remote_file}")
+        local_file = destination / relative
+        expected_size = info.get("size")
+        if expected_size is not None and local_file.is_file() and local_file.stat().st_size == expected_size:
+            continue
+        local_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary_file = local_file.with_suffix(f"{local_file.suffix}.partial")
+        filesystem.get_file(remote_file, str(temporary_file))
+        os.replace(temporary_file, local_file)
+        copied += 1
+
+    logger.info("Staged %s object-store model files locally at %s (%s copied)", len(remote_files), destination, copied)
+    return str(destination)
 
 
 def vllm_launcher(config: VllmEngineConfig) -> VllmLauncher:
@@ -90,7 +145,10 @@ class VllmBackend:
             engine_kwargs["max_model_len"] = spec.max_model_len
         if self.config.max_num_batched_tokens is not None:
             engine_kwargs["max_num_batched_tokens"] = self.config.max_num_batched_tokens
-        model = ModelConfig(name=spec.model, path=spec.model_path, engine_kwargs=engine_kwargs)
+        model_path = spec.model_path
+        if model_path is not None and self.config.stage_object_store_model_locally:
+            model_path = stage_object_store_model_locally(model_path)
+        model = ModelConfig(name=spec.model, path=model_path, engine_kwargs=engine_kwargs)
         with _chat_template_argument(spec.chat_template_content) as chat_template_args:
             with VllmEnvironment(
                 model=model,
