@@ -6,8 +6,17 @@ from pathlib import Path
 from unittest.mock import ANY, Mock
 
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
-from marin.evaluation.harbor.runner import HarborExecutor, HarborRunConfig, HarborTrial, _write_samples, run_harbor
+from marin.evaluation.harbor.runner import (
+    HarborExecutor,
+    HarborRunConfig,
+    HarborTrial,
+    _restore_completed_trials,
+    _upload_trials,
+    _write_samples,
+    run_harbor,
+)
 from marin.inference.types import OpenAIEndpoint, RunningModel
+from rigging.filesystem import StoragePath
 
 from experiments.evaluation.evals import EVALS
 from experiments.evaluation.models import models
@@ -55,6 +64,22 @@ def test_write_samples_uses_a_path_safe_name_for_hf_dataset(tmp_path):
 
     assert path == str(tmp_path / "samples_harbor.parquet")
     assert Path(path).exists()
+
+
+def test_harbor_trial_tree_round_trips_object_storage(tmp_path):
+    completed_trial = tmp_path / "completed" / "trial-one"
+    (completed_trial / "agent").mkdir(parents=True)
+    (completed_trial / "result.json").write_text('{"task_name": "trial-one"}')
+    (completed_trial / "agent" / "trajectory.json").write_text('{"steps": []}')
+    storage_root = f"memory://{tmp_path.name}/eval"
+
+    _upload_trials(completed_trial.parent, storage_root)
+
+    stored_result = StoragePath(storage_root) / "harbor_trials" / "trial-one" / "result.json"
+    assert stored_result.read_text() == '{"task_name": "trial-one"}'
+    restored = tmp_path / "restored"
+    assert _restore_completed_trials(storage_root, restored) == 1
+    assert (restored / "trial-one" / "agent" / "trajectory.json").read_text() == '{"steps": []}'
 
 
 def test_run_harbor_derives_url_and_served_name_from_running_model(tmp_path, monkeypatch):

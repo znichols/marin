@@ -33,3 +33,20 @@ commit and uses the launcher's existing `hf://` materialization path.
 ## Future work
 
 - [ ] Record the capped rerun result.
+
+## Hypothesis 2
+
+The corrected rerun completed all three Harbor attempts, then failed while persisting the trial tree.
+The Harbor runner passed an S3 URL to helpers that always constructed a GCS filesystem, so `gcsfs`
+interpreted `s3:` as a bucket name.
+
+## Changes to make
+
+Resolve the filesystem from each artifact URL and cover a complete trial-tree upload and restore
+through a non-GCS remote protocol.
+
+## Results
+
+The upload and restore helpers now resolve their filesystem from the artifact URL. A regression test
+round-trips `result.json` and the agent trajectory through an in-memory remote filesystem; the 128
+evaluation, eval, and inference tests pass.

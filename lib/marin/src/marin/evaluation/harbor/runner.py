@@ -33,7 +33,7 @@ from marin.evaluation.harbor.dataset import materialize_harbor_dataset
 from marin.evaluation.records import RunStatus
 from marin.evaluation.runner import EvaluationError, EvaluationOutcome
 from marin.evaluation.samples import EvalSample, Grading, SampleKind, write_sample_parquet
-from marin.evaluation.utils import download_from_gcs, upload_to_gcs
+from marin.evaluation.utils import download_from_storage, upload_to_storage
 from marin.inference.types import RunningModel
 
 logger = logging.getLogger(__name__)
@@ -165,7 +165,7 @@ def _restore_completed_trials(out_path: str, job_dir: Path) -> int:
         local = job_dir / os.path.basename(trial_dir)
         if (local / "result.json").exists():
             continue
-        download_from_gcs(trial_dir, str(local))
+        download_from_storage(trial_dir, str(local))
         restored += 1
     return restored
 
@@ -334,7 +334,7 @@ def _upload_trials(job_dir: Path, out_path: str) -> None:
     """Upload each finished trial directory under ``job_dir`` to ``out_path/harbor_trials`` for resume."""
     for trial_dir in (d for d in job_dir.iterdir() if d.is_dir()):
         if (trial_dir / "result.json").exists():
-            upload_to_gcs(str(trial_dir), prefix_join(out_path, f"harbor_trials/{trial_dir.name}"))
+            upload_to_storage(str(trial_dir), prefix_join(out_path, f"harbor_trials/{trial_dir.name}"))
 
 
 def run_harbor(

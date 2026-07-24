@@ -3,48 +3,43 @@
 
 import logging
 import os
+import posixpath
 import time
 
 from fsspec.callbacks import TqdmCallback
-from rigging.filesystem import StoragePath
-from rigging.filesystem import filesystem as marin_filesystem
+from rigging.filesystem import StoragePath, url_to_fs
 
 logger = logging.getLogger(__name__)
 
 
-def download_from_gcs(gcs_path: str, destination_path: str) -> None:
-    """
-    Downloads the folder at `gcs_path` to `destination_path`,
-    unless `destination_path` already exists.
-    """
+def download_from_storage(source_path: str, destination_path: str) -> None:
+    """Download a remote directory unless ``destination_path`` already exists."""
     if os.path.exists(destination_path):
         print(f"Skipping download: {destination_path} already exists.")
         return
 
-    print(f"Downloading {gcs_path} from GCS to {destination_path}.")
+    print(f"Downloading {source_path} to {destination_path}.")
     start_time: float = time.time()
-    fs = marin_filesystem("gcs")
+    fs, source_key = url_to_fs(source_path)
 
-    if not fs.exists(gcs_path):
-        raise FileNotFoundError(f"{gcs_path} does not exist in GCS.")
+    if not fs.exists(source_key):
+        raise FileNotFoundError(f"{source_path} does not exist.")
 
     # The slash is needed to download the contents of the folder to `destination_path`
     os.makedirs(destination_path, exist_ok=True)
-    fs.get(gcs_path + "/", destination_path, recursive=True, callback=TqdmCallback())
+    fs.get(posixpath.join(source_key, ""), destination_path, recursive=True, callback=TqdmCallback())
 
     elapsed_time_seconds: float = time.time() - start_time
-    print(f"Downloaded {gcs_path} to {destination_path} ({elapsed_time_seconds:.2f}s).")
+    print(f"Downloaded {source_path} to {destination_path} ({elapsed_time_seconds:.2f}s).")
 
 
-def upload_to_gcs(local_path: str, gcs_path: str) -> None:
-    """
-    Uploads a folder `local_path` to Google Cloud Storage (GCS).
-    """
+def upload_to_storage(local_path: str, destination_path: str) -> None:
+    """Upload a local directory to an object-store destination."""
     print(f"Uploading {local_path}.")
-    fs = marin_filesystem("gcs")
-    # The slash is needed to upload the contents of the folder to `gcs_path`
-    fs.put(local_path + "/", gcs_path, recursive=True)
-    logger.info(f"Uploaded {local_path} to {gcs_path}.")
+    fs, destination_key = url_to_fs(destination_path)
+    # The slash uploads the directory's contents rather than nesting its basename.
+    fs.put(os.path.join(local_path, ""), destination_key, recursive=True)
+    logger.info("Uploaded %s to %s.", local_path, destination_path)
 
 
 def discover_hf_checkpoints(base_path: str) -> list[str]:
