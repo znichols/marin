@@ -37,6 +37,12 @@ class EvalModelConfig:
     backend: ServeBackend = ServeBackend.VLLM
     gpu_only: bool = False
     vllm_extra_args: tuple[str, ...] = ()
+    runai_streamer_extra_args: tuple[str, ...] = ()
+    """vLLM options valid only for the RunAI object-store streaming loader.
+
+    CUDA/CoreWeave evaluation serves stage weights to local disk, so they omit these options; TPU
+    and explicit streaming paths retain them.
+    """
     tensor_parallel_size: int | None = None
     max_model_len: int | None = None
     """Explicit vLLM context limit. ``None`` lets the server use the checkpoint default."""
@@ -112,11 +118,13 @@ def _grug_agentic_s3_step1903() -> EvalModelConfig:
             "--data-parallel-size",
             "8",
             "--enable-expert-parallel",
-            "--model-loader-extra-config",
-            '{"distributed":true}',
             "--enable-auto-tool-choice",
             "--tool-call-parser",
             "hermes",
+        ),
+        runai_streamer_extra_args=(
+            "--model-loader-extra-config",
+            '{"distributed":true}',
         ),
         tensor_parallel_size=1,
         max_model_len=65536,

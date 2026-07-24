@@ -39,12 +39,11 @@ def test_grug_agentic_profile_resolves_validated_h100_serving_contract():
         "--data-parallel-size",
         "8",
         "--enable-expert-parallel",
-        "--model-loader-extra-config",
-        '{"distributed":true}',
         "--enable-auto-tool-choice",
         "--tool-call-parser",
         "hermes",
     )
+    assert plan.serve.runai_streamer_extra_args == ("--model-loader-extra-config", '{"distributed":true}')
 
 
 def test_grug_agentic_profile_materializes_one_sequence_limit_in_the_vllm_engine():
@@ -68,5 +67,13 @@ def test_grug_agentic_profile_materializes_one_sequence_limit_in_the_vllm_engine
     engine_args = inference.engine.extra_args
 
     assert inference.engine.stage_object_store_model_locally
+    assert "--model-loader-extra-config" not in engine_args
     assert engine_args.count("--max-num-seqs") == 1
     assert engine_args[engine_args.index("--max-num-seqs") + 1] == "32"
+
+    streaming_inference = _shared_inference_config(
+        plan.model.location,
+        plan.model.tokenizer or plan.model.location,
+        replace(plan.serve, tpu_type="v6e-8", gpu_type=None, gpu_count=None, auto_overrides=False),
+    )
+    assert "--model-loader-extra-config" in streaming_inference.engine.extra_args

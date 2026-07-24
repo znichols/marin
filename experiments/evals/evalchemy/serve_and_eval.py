@@ -169,13 +169,18 @@ class ServeSpec:
     """Extra flags forwarded to ``vllm serve`` (``VllmEngineConfig.extra_args``); empty for the common case.
     Use it for models the portable defaults miss:
 
-    - 256-expert Grug MoE export: ``--data-parallel-size N --enable-expert-parallel
-      --model-loader-extra-config '{"distributed":true}'`` with ``tensor_parallel_size=1``; the per-head
-      TP heuristic cannot infer this.
+    - 256-expert Grug MoE export: ``--data-parallel-size N --enable-expert-parallel`` with
+      ``tensor_parallel_size=1``; the per-head TP heuristic cannot infer this.
     - Qwen gated-delta-net models (``qwen_gdn_linear_attn``: ``Qwen/Qwen3.5-35B-A3B``,
       ``Qwen/Qwen3-Next-80B-A3B``): ``--gdn-prefill-backend triton``. The GPU serve env runs without
       ``nvcc``, so the default FlashInfer GDN prefill kernel — JIT-compiled at warmup — fails; triton
       needs no compiler."""
+    runai_streamer_extra_args: tuple[str, ...] = ()
+    """Options valid only with vLLM's RunAI object-store streaming loader.
+
+    CUDA/CoreWeave serves stage object-store models locally, so they must not forward these. TPU
+    object-store serves still use the RunAI loader and retain them.
+    """
     max_num_seqs: int | None = None
     """Maximum live sequences per vLLM shard. ``None`` leaves the engine default intact."""
     chat_template_content: str | None = None
@@ -329,6 +334,7 @@ def _shared_inference_config(model: str, tokenizer: str, spec: ServeSpec) -> _In
         vllm_extra_args, max_model_len = auto_serve_overrides(model, spec.max_model_len, spec.vllm_extra_args)
     vllm_extra_args = _resolved_vllm_extra_args(spec, vllm_extra_args)
     if spec.gpu_count is not None:
+        stage_object_store_model_locally = True
         resources = ResourceConfig.with_gpu(
             spec.gpu_type or "H100",
             count=spec.gpu_count,
@@ -345,7 +351,7 @@ def _shared_inference_config(model: str, tokenizer: str, spec: ServeSpec) -> _In
                 max_num_batched_tokens=spec.max_num_batched_tokens,
                 # CoreWeave GPU pods have local disk reserved by ServeSpec.  A
                 # complete local copy avoids RunAI streamer file-access failures.
-                stage_object_store_model_locally=True,
+                stage_object_store_model_locally=stage_object_store_model_locally,
                 extra_args=(*vllm_extra_args, *_QUIET_VLLM_ARGS),
             )
             environment = create_environment(
@@ -369,7 +375,7 @@ def _shared_inference_config(model: str, tokenizer: str, spec: ServeSpec) -> _In
             engine = VllmEngineConfig(
                 startup_timeout_seconds=int(ENDPOINT_READY_TIMEOUT_SECONDS),
                 max_num_batched_tokens=spec.max_num_batched_tokens,
-                extra_args=(*vllm_extra_args, *_QUIET_VLLM_ARGS),
+                extra_args=(*vllm_extra_args, *spec.runai_streamer_extra_args, *_QUIET_VLLM_ARGS),
             )
             environment = create_environment(extras=["tpu", "vllm"], env_vars=_propagated_env())
         else:
