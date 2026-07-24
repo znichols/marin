@@ -96,6 +96,7 @@ def test_grug_opencode_preset_retains_harbor_policy_and_binds_runtime_endpoint()
 
     assert policy.document["n_attempts"] == 3
     assert policy.document["n_concurrent_trials"] == 256
+    assert policy.version == "1.0"
     assert policy.document["datasets"] == [
         {
             "path": None,

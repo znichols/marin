@@ -64,7 +64,11 @@ class ResolvedHarborPolicy:
 
     @property
     def version(self) -> str | None:
-        value = self.document["datasets"][0].get("version")
+        # Harbor package datasets use ``ref`` for their selected version; the
+        # legacy registry backend uses ``version``.  Expose one stable policy
+        # selector to the launcher regardless of registry backend.
+        dataset = self.document["datasets"][0]
+        value = dataset.get("ref") or dataset.get("version")
         return str(value) if value is not None else None
 
     @property
