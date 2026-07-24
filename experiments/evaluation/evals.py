@@ -22,6 +22,8 @@ from marin.evaluation.runner import EvalExecutor
 
 _TERMINAL_BENCH_DATASET = "DCAgent2/terminal_bench_2"
 _SWEBENCH_RANDOM_100_DATASET = "DCAgent2/swebench-verified-random-100-folders"
+_GRUG_OPENCODE_DATASET = "DCAgent/dev_set_v2"
+_GRUG_OPENCODE_DATASET_REVISION = "377118ff3031c934f5a647ae2c425eb74eef3b21"
 _AGENTIC_CONCURRENCY = 32
 
 
@@ -158,8 +160,8 @@ def _grug_opencode_eval() -> HarborDefinition:
     return HarborDefinition(
         name="grug-opencode-id",
         config=HarborRunConfig(
-            dataset="DCAgent/dev_set_v2",
-            version="1.0",
+            dataset=f"hf://{_GRUG_OPENCODE_DATASET}",
+            version=_GRUG_OPENCODE_DATASET_REVISION,
             agent="opencode",
             n_concurrent=256,
             max_output_tokens=16384,

@@ -110,6 +110,9 @@ uv run python -m experiments.evaluation.cli launch \
   --model grug-agentic-s3-step1903 --evals grug-opencode-id --limit 1
 ```
 
+The profile materializes `DCAgent/dev_set_v2` from a pinned Hugging Face commit before passing its
+task directories to Harbor.
+
 Mechanism code lives under `marin.evaluation.evalchemy` and `marin.evaluation.harbor`; the common
 runner depends only on the callable executor protocol and the shared record types.
 

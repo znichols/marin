@@ -3,7 +3,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 from marin.evaluation.harbor.dataset import materialize_harbor_dataset
 from marin.evaluation.harbor.runner import HarborExecutor, HarborRunConfig, HarborTrial, _write_samples, run_harbor
@@ -105,7 +105,9 @@ def test_grug_opencode_policy_binds_the_capped_dataset_and_endpoint(tmp_path, mo
         job_dir.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr("marin.evaluation.harbor.runner._run_driver", run_driver)
-    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", Mock(return_value=None))
+    dataset_root = tmp_path / "dev_set_v2"
+    materialize = Mock(return_value=dataset_root)
+    monkeypatch.setattr("marin.evaluation.harbor.runner.materialize_harbor_dataset", materialize)
     definition = EVALS["grug-opencode-id"]
     executor = definition.executor_for(models()["grug-agentic-s3-step1903"], limit=1)
     assert isinstance(executor, HarborExecutor)
@@ -118,6 +120,12 @@ def test_grug_opencode_policy_binds_the_capped_dataset_and_endpoint(tmp_path, mo
 
     run_harbor(model, executor.config, str(tmp_path), hf_token=None)
 
+    materialize.assert_called_once_with(
+        "hf://DCAgent/dev_set_v2",
+        "377118ff3031c934f5a647ae2c425eb74eef3b21",
+        ANY,
+        hf_token=None,
+    )
     assert captured["n_attempts"] == 3
     assert captured["n_concurrent_trials"] == 256
     assert captured["timeout_multiplier"] == 2.0
@@ -135,8 +143,7 @@ def test_grug_opencode_policy_binds_the_capped_dataset_and_endpoint(tmp_path, mo
     assert captured["verifier"]["max_timeout_sec"] == 14400
     assert captured["datasets"] == [
         {
-            "name": "DCAgent/dev_set_v2",
-            "ref": "1.0",
+            "path": str(dataset_root),
             "n_tasks": 1,
         }
     ]
