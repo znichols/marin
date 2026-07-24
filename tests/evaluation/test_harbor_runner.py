@@ -185,7 +185,6 @@ def test_run_harbor_normalizes_a_completed_external_trial(tmp_path, monkeypatch)
         )
 
     monkeypatch.setattr("marin.evaluation.harbor.runner.subprocess.run", run_driver)
-    monkeypatch.setenv("DAYTONA_API_KEY", "daytona-key")
     monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-harbor")
     model = _running_model()
 
@@ -199,6 +198,7 @@ def test_run_harbor_normalizes_a_completed_external_trial(tmp_path, monkeypatch)
         ),
         str(tmp_path),
         hf_token=None,
+        driver_env={"DAYTONA_API_KEY": "daytona-key"},
     )
 
     assert captured["driver_config"].endpoint_url == model.endpoint.base_url

@@ -142,9 +142,10 @@ def serve_config_vllm_args(serve: ServeConfig) -> tuple[str, ...]:
     ``reasoning_parser``, ``data_parallel_size``) come first, then the explicit ``vllm_extra_args``
     escape hatch. An explicit ``vllm_extra_args`` entry wins: a typed knob is skipped when its flag is
     already present there, so a hand-tuned value is never duplicated. ``tensor_parallel_size``,
-    ``max_model_len``, and ``chat_template`` are omitted -- they are first-class serve fields the
-    launcher passes through the served-model config, not extra flags. ``--trust-remote-code`` is not
-    rendered here: the native server forces it on for every evaluated model.
+    ``max_model_len``, ``max_num_batched_tokens``, ``max_num_seqs``, ``object_store_load_mode``,
+    ``chat_template``, and ``auto_overrides`` are consumed by serving configuration or lowering
+    rather than rendered as extra flags. ``--trust-remote-code`` is not rendered here: the native
+    server forces it on for every evaluated model.
     """
     explicit = tuple(serve.vllm_extra_args)
     derived: list[str] = []

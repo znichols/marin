@@ -130,6 +130,7 @@ def build_evaluation_batch(
                     eval_ref=definition.record_ref,
                 ),
                 executor=definition.executor_for(model, spec.limit),
+                secret_env_keys=tuple(definition.secret_env),
             )
         )
 

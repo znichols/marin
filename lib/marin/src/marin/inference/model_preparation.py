@@ -9,7 +9,7 @@ import logging
 import os
 import posixpath
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from levanter.model_cache import resolve_cached_model_path
 from rigging.filesystem import StoragePath, url_to_fs
@@ -103,14 +103,17 @@ def stage_object_store_model_locally(model: str, staging_root: Path | None = Non
     destination = cache_root / _LOCAL_MODEL_CACHE_DIR / hashlib.sha256(model.encode()).hexdigest()[:16]
     logger.info("Staging %d object-store model entries from %s to %s", len(remote_entries), model, destination)
     copied = 0
-    remote_prefix = remote_root if remote_root.endswith("/") else f"{remote_root}/"
+    remote_root_path = PurePosixPath(remote_root)
     for remote_file, info in sorted(remote_entries.items()):
         if info.get("type") == "directory":
             continue
-        if not remote_file.startswith(remote_prefix):
+        try:
+            relative = PurePosixPath(remote_file).relative_to(remote_root_path)
+        except ValueError as exc:
+            raise ValueError(f"Object-store listing escaped model prefix: {remote_file}") from exc
+        if ".." in relative.parts:
             raise ValueError(f"Object-store listing escaped model prefix: {remote_file}")
-        relative = remote_file.removeprefix(remote_prefix)
-        local_file = destination / relative
+        local_file = destination.joinpath(*relative.parts)
         expected_size = info.get("size")
         if expected_size is not None and local_file.is_file() and local_file.stat().st_size == expected_size:
             continue

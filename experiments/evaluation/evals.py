@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 from typing import Protocol
 
 from marin.evaluation.evalchemy.runner import EvalchemyExecutor, EvalchemyRunConfig
@@ -27,12 +28,14 @@ from rigging.secrets import SecretSpec
 _TERMINAL_BENCH_DATASET = "DCAgent2/terminal_bench_2"
 _SWEBENCH_RANDOM_100_DATASET = "DCAgent2/swebench-verified-random-100-folders"
 _AGENTIC_CONCURRENCY = 32
-_DAYTONA_SECRET_ENV: Mapping[str, SecretSpec] = {
-    "DAYTONA_API_KEY": (
-        "env:DAYTONA_API_KEY",
-        "gcp-secret://projects/hai-gcp-models/secrets/DAYTONA_EVAL_API_KEY/versions/latest",
-    )
-}
+_DAYTONA_SECRET_ENV: Mapping[str, SecretSpec] = MappingProxyType(
+    {
+        "DAYTONA_API_KEY": (
+            "env:DAYTONA_API_KEY",
+            "gcp-secret://projects/hai-gcp-models/secrets/DAYTONA_EVAL_API_KEY/versions/latest",
+        )
+    }
+)
 _GRUG_NON_RETRYABLE_EXCEPTIONS = (
     "AgentTimeoutError",
     "AgentEnvironmentTimeoutError",
@@ -118,7 +121,7 @@ class HarborDefinition:
                 kwargs={**model.agent.agent_kwargs, **self.config.agent.kwargs},
             ),
         )
-        return HarborExecutor(config=config)
+        return HarborExecutor(config=config, secret_env_keys=tuple(self.secret_env))
 
 
 def _mcq_eval(name: str, task: str, shots: int) -> EvalchemyDefinition:

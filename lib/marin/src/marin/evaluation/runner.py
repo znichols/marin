@@ -87,6 +87,7 @@ class EvaluationIdentity:
 class Evaluation:
     identity: EvaluationIdentity
     executor: EvalExecutor
+    secret_env_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -238,7 +239,9 @@ def _run_one_evaluation(
     inference_failure: Exception | None = None
     try:
         session.check_alive()
-        outcome = evaluation.executor(session.model, evaluation.identity.output_dir, env_vars)
+        allowed_env_keys = (*EVAL_RUNTIME_ENV_KEYS, *evaluation.secret_env_keys)
+        evaluation_env = {key: env_vars[key] for key in allowed_env_keys if key in env_vars}
+        outcome = evaluation.executor(session.model, evaluation.identity.output_dir, evaluation_env)
         metrics = outcome.metrics
         jobs |= outcome.jobs
     except Exception as exc:
@@ -311,6 +314,10 @@ def run_evaluation_batch(batch: EvaluationBatch) -> list[str]:
         raise ValueError("an evaluation batch requires at least one evaluation")
     orchestrator_job_id = str(iris_ctx().job_id)
     runtime_env = env_vars_from_keys(EVAL_RUNTIME_ENV_KEYS)
+    evaluation_env = {
+        **runtime_env,
+        **env_vars_from_keys(tuple(batch.secret_env)),
+    }
     inference = inference_config_for_model(
         batch.model,
         batch.accelerator,
@@ -324,7 +331,7 @@ def run_evaluation_batch(batch: EvaluationBatch) -> list[str]:
                 batch,
                 session,
                 orchestrator_job_id=orchestrator_job_id,
-                env_vars=runtime_env,
+                env_vars=evaluation_env,
             )
     except RemoteInferenceStartupError as exc:
         inference_jobs, tails = _startup_diagnostics(exc)
