@@ -32,7 +32,7 @@ commit and uses the launcher's existing `hf://` materialization path.
 
 ## Future work
 
-- [ ] Record the capped rerun result.
+- [x] Record the capped rerun result.
 
 ## Hypothesis 2
 
@@ -50,3 +50,13 @@ through a non-GCS remote protocol.
 The upload and restore helpers now resolve their filesystem from the artifact URL. A regression test
 round-trips `result.json` and the agent trajectory through an in-memory remote filesystem; the 128
 evaluation, eval, and inference tests pass.
+
+The first final-code rerun spent the full 40-minute CoreWeave startup grace period in `building`
+without a worker attempt, log, failure, or preemption. Iris recorded `infra_failed` and cleaned up
+the child. The unchanged retry
+`/loom/eval-20260724-221717-grug-agentic-s3-step1903-a34d` then succeeded. It staged 45 model files,
+started the H100x8 vLLM service, completed all three attempts for one OpenCode task, uploaded the
+three trial trees, wrote the normalized samples and aggregate result, and recorded `status=succeeded`
+at
+`s3://marin-us-east-02a/marin/eval-metadata/runs/20260724-221717-grug-agentic-s3-step1903-grug-opencode-id-83c1/record.json`.
+The task scored 0/3; the capped run validated the launch and persistence path, not model quality.
