@@ -13,6 +13,10 @@ _DEFAULT_MODEL_INFO = {
     "input_cost_per_token": 0.0,
     "output_cost_per_token": 0.0,
 }
+_OPENCODE_AGENT = "opencode"
+_HOSTED_VLLM_PROVIDER = "hosted_vllm"
+_HOSTED_VLLM_DISPLAY_NAME = "Hosted vLLM"
+_OPENAI_COMPATIBLE_PACKAGE = "@ai-sdk/openai-compatible"
 
 
 @dataclass(frozen=True)
@@ -96,6 +100,34 @@ class HarborDriverConfig:
         return cls(run=HarborRunConfig(**run_values), **values)
 
 
+def _opencode_config_for_endpoint(config: object, endpoint_url: str) -> dict[str, Any]:
+    opencode_config = config
+    if not isinstance(opencode_config, Mapping):
+        raise ValueError("Harbor agent opencode_config must be a mapping")
+    providers = opencode_config.get("provider", {})
+    if not isinstance(providers, Mapping):
+        raise ValueError("Harbor OpenCode provider config must be a mapping")
+    hosted_vllm = providers.get(_HOSTED_VLLM_PROVIDER, {})
+    if not isinstance(hosted_vllm, Mapping):
+        raise ValueError("Harbor OpenCode hosted_vllm provider config must be a mapping")
+    options = hosted_vllm.get("options", {})
+    if not isinstance(options, Mapping):
+        raise ValueError("Harbor OpenCode hosted_vllm provider options must be a mapping")
+
+    return {
+        **opencode_config,
+        "provider": {
+            **providers,
+            _HOSTED_VLLM_PROVIDER: {
+                **hosted_vllm,
+                "npm": _OPENAI_COMPATIBLE_PACKAGE,
+                "name": _HOSTED_VLLM_DISPLAY_NAME,
+                "options": {**options, "baseURL": endpoint_url},
+            },
+        },
+    }
+
+
 def native_job_config(config: HarborDriverConfig) -> dict[str, Any]:
     """Translate the stable Marin config into the pinned Harbor ``JobConfig`` schema."""
     run = config.run
@@ -109,6 +141,11 @@ def native_job_config(config: HarborDriverConfig) -> dict[str, Any]:
         "max_output_tokens": run.agent.max_output_tokens,
     }
     agent_kwargs.update({"api_base": config.endpoint_url, "model_info": model_info})
+    if run.agent.name == _OPENCODE_AGENT:
+        agent_kwargs["opencode_config"] = _opencode_config_for_endpoint(
+            agent_kwargs.get("opencode_config", {}),
+            config.endpoint_url,
+        )
 
     if config.dataset_path is not None:
         dataset = {"path": config.dataset_path, "n_tasks": run.task_limit}

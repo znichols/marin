@@ -133,7 +133,10 @@ def test_native_job_config_translates_the_external_harbor_contract():
                 max_output_tokens=16384,
                 max_timeout=7200,
                 setup_timeout=600,
-                kwargs={"model_info": {"max_input_tokens": 64512}},
+                kwargs={
+                    "model_info": {"max_input_tokens": 64512},
+                    "opencode_config": {"compaction": {"auto": False}},
+                },
             ),
             environment=HarborEnvironmentConfig(
                 environment_type="daytona",
@@ -163,6 +166,13 @@ def test_native_job_config_translates_the_external_harbor_contract():
     assert agent["kwargs"]["api_base"] == "https://iris.example/v1"
     assert agent["kwargs"]["model_info"]["max_input_tokens"] == 64512
     assert agent["kwargs"]["model_info"]["max_output_tokens"] == 16384
+    opencode_config = agent["kwargs"]["opencode_config"]
+    assert opencode_config["compaction"] == {"auto": False}
+    assert opencode_config["provider"]["hosted_vllm"] == {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "Hosted vLLM",
+        "options": {"baseURL": "https://iris.example/v1"},
+    }
 
 
 def test_run_harbor_normalizes_a_completed_external_trial(tmp_path, monkeypatch):
