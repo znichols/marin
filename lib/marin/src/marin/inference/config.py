@@ -20,6 +20,29 @@ WORKER_PYTHON_VERSION = "3.12"
 # participate in Marin's workspace dependency resolution.
 DEFAULT_CUDA_VLLM_VERSION = "0.25.1"
 TPU_VLLM_WORKER_EXTRAS = ("tpu", "vllm")
+# Compiler/runtime controls whose values are part of numerical identity. Both
+# Levanter and vLLM fingerprinting consume this single allowlist.
+NUMERICAL_RUNTIME_ENV_NAMES = frozenset(
+    {
+        "JAX_DEFAULT_MATMUL_PRECISION",
+        "JAX_DISABLE_JIT",
+        "JAX_ENABLE_X64",
+        "JAX_PLATFORMS",
+        "LIBTPU_INIT_ARGS",
+        "MODEL_IMPL_TYPE",
+        "PJRT_DEVICE",
+        "TPU_ML_PLATFORM",
+        "TPU_ML_PLATFORM_VERSION",
+        "VLLM_ATTENTION_BACKEND",
+        "VLLM_BATCH_INVARIANT",
+        "VLLM_TARGET_DEVICE",
+        "VLLM_TPU_DISABLE_TOPK_TOPP_OPTIMIZATION",
+        "VLLM_USE_DEEP_GEMM",
+        "VLLM_USE_FLASHINFER_SAMPLER",
+        "VLLM_USE_V1",
+        "XLA_FLAGS",
+    }
+)
 
 
 class VllmLauncherType(StrEnum):
