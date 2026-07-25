@@ -12,6 +12,7 @@ import random
 import shutil
 import tempfile
 import time
+import typing
 import urllib.parse
 import warnings
 from dataclasses import dataclass
@@ -80,6 +81,19 @@ if TYPE_CHECKING:
 DEFAULT_MAX_SHARD_SIZE = int(5e9)
 
 logger = logging.getLogger(__name__)
+
+
+@typing.runtime_checkable
+class IncrementalStateDictLoader(typing.Protocol):
+    """Model capability for memory-bounded, destructive state-dict loading."""
+
+    def from_state_dict_incrementally(
+        self,
+        state_dict: StateDict,
+        prefix: str | None = None,
+    ) -> Self:
+        """Consume recognized entries from ``state_dict`` while materializing the model."""
+        ...
 
 
 def _convert_to_hf_url(model_id: str, revision: Optional[str] = None) -> str:
@@ -941,9 +955,7 @@ class HFCheckpointConverter(Generic[LevConfig]):
                     ignore_prefix = self.ignore_prefix
                     break
 
-        def load_from_state_dict(template, state_dict):
-            lev_model = from_torch_compatible_state_dict(template, state_dict, prefix=ignore_prefix)
-
+        def finish_loaded_model(lev_model):
             # However, this might miss some buffers that don't get persisted in the state dict
             # (e.g. pytorch buffers with persistent=false), so we have to reinitialize them. We then init the model
             # again, this time keeping only the (missing) buffers, and then combine the two models.
@@ -967,11 +979,26 @@ class HFCheckpointConverter(Generic[LevConfig]):
 
             return lev_model
 
-        load_from_state_dict = haliax.named_jit(
-            load_from_state_dict, axis_resources=axis_mapping, out_axis_resources=axis_mapping, donate_args=(True,)
-        )
         lev_model = eqx.filter_eval_shape(lm_model_cls.init, Vocab, config, key=PRNGKey(0))
-        lev_model = load_from_state_dict(lev_model, state_dict)
+        if isinstance(lev_model, IncrementalStateDictLoader):
+            # Large stacked models can consume tensor groups eagerly so input
+            # arrays die as their sharded outputs become resident. Wrapping the
+            # whole conversion in one JIT would keep both complete models live.
+            lev_model = lev_model.from_state_dict_incrementally(state_dict, prefix=ignore_prefix)
+            lev_model = finish_loaded_model(lev_model)
+        else:
+
+            def load_from_state_dict(template, state_dict):
+                loaded = from_torch_compatible_state_dict(template, state_dict, prefix=ignore_prefix)
+                return finish_loaded_model(loaded)
+
+            load_from_state_dict = haliax.named_jit(
+                load_from_state_dict,
+                axis_resources=axis_mapping,
+                out_axis_resources=axis_mapping,
+                donate_args=(True,),
+            )
+            lev_model = load_from_state_dict(lev_model, state_dict)
 
         return lev_model
 

@@ -829,6 +829,7 @@ def load_checkpoint(
     axis_mapping: Optional[haliax.partitioning.ResourceMapping] = None,
     mesh: Optional[jax.sharding.Mesh] = None,
     allow_partial: bool = False,
+    restore_dtype_from_exemplar: bool = False,
 ) -> M:
     """
     Load a checkpoint from a given path using TensorStore.
@@ -847,6 +848,7 @@ def load_checkpoint(
         axis_mapping: the axis mapping to use for loading the checkpoint
         mesh: the mesh to use for loading the checkpoint
         allow_partial: if True, allow partial loading of the checkpoint. If False, all parameters must be present in the checkpoint.
+        restore_dtype_from_exemplar: if True, cast arrays directly to the exemplar dtypes while restoring.
     Returns:
         the loaded checkpoint, with the same structure as the exemplar tree
 
@@ -866,7 +868,12 @@ def load_checkpoint(
 
     ser, non_ser = equinox.partition(tree, is_jax_array_like)
     tree = tree_deserialize_leaves_tensorstore(
-        checkpoint_path, ser, axis_mapping=axis_mapping, mesh=mesh, allow_missing=allow_partial
+        checkpoint_path,
+        ser,
+        axis_mapping=axis_mapping,
+        mesh=mesh,
+        allow_missing=allow_partial,
+        restore_dtype_from_exemplar=restore_dtype_from_exemplar,
     )
     tree = equinox.combine(tree, non_ser)
     return tree
