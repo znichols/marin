@@ -5,7 +5,6 @@ apply_chat_template: true
 resource_hint:
   gpu:
     H100: 8
-  cpu: 48
   memory: 1024g
   disk: 512g
 serve:
