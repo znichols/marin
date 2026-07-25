@@ -1,0 +1,9 @@
+# Copyright The Marin Authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Frozen source revision and contract digests for Snowball parity."""
+
+NUMERICAL_SOURCE_REVISION = "a4806a81a825d8238e8c5f38210d4c904bc018f3"
+EXPORTED_LEVANTER_GPU_CONTRACT_SHA256 = "fae7d1ca045feec7b4a776c795b566c81fd7ec20dd59e83c99eb1fd1c1aaf4d1"
+EXPORTED_LEVANTER_TPU_CONTRACT_SHA256 = "8cb4e9cc0e6a4331f75b135724224d5586db0d1955d118e0dfe856dc0945c242"
+VLLM_TPU_CONTRACT_SHA256 = "9eef4231c7c5ba091096a9b1dbe65c74408a2becb35f81eaf9daa39202fef984"

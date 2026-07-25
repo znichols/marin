@@ -1,0 +1,29 @@
+{
+  "backend": "levanter-exported",
+  "candidate_revision": "a4806a81a825d8238e8c5f38210d4c904bc018f3",
+  "canonical_golden_digest": "84fbb4229cab10a98a4010f84f39d28894d59b8b5c95ce0d39d031f0fa69fbbf",
+  "code_digest": "3e6c2ec1871df85b0a0f8d560fbf2cd9d2dfae2aa02bac72523791c9a865cd8c",
+  "device_kind": "TPU v6 lite",
+  "exact_top_scores": true,
+  "fork_source_revisions": [],
+  "max_probability_error_by_bucket": [
+    [256, 0.0],
+    [1024, 0.0],
+    [4096, 0.0],
+    [16384, 0.0],
+    [32768, 0.0]
+  ],
+  "mesh_shape": [
+    ["data", 8],
+    ["replica", 1],
+    ["model", 1],
+    ["replica_dcn", 1]
+  ],
+  "model_config_digest": "a7bf00dc7b190025159d2189451e51598853273955181a84553e06f1962abc34",
+  "name": "snowball-levanter-tpu-v1",
+  "parameter_digest": "d819cbc63780bd866a942e47f9283cbd7932bbb237b52df527edd750c65be8f0",
+  "platform": "tpu",
+  "prompt_fixture_digest": "47863868cbfe336739c8097535f113f4d2dae4954f772eb91511c911433596e8",
+  "runtime_fingerprint_digest": "c93a224da8c89061084ebffea4344bf2b3bc71bda4d986b43e478419f4380dc5",
+  "schema_version": 2
+}

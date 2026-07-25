@@ -1,0 +1,29 @@
+{
+  "backend": "levanter-exported",
+  "candidate_revision": "a4806a81a825d8238e8c5f38210d4c904bc018f3",
+  "canonical_golden_digest": "d695624cc411d7bf79a6c2e28f34538437985a9e07612d2a07a5095128ff4b2d",
+  "code_digest": "3e6c2ec1871df85b0a0f8d560fbf2cd9d2dfae2aa02bac72523791c9a865cd8c",
+  "device_kind": "NVIDIA H100 80GB HBM3",
+  "exact_top_scores": false,
+  "fork_source_revisions": [],
+  "max_probability_error_by_bucket": [
+    [256, 0.075],
+    [1024, 0.075],
+    [4096, 0.075],
+    [16384, 0.075],
+    [32768, 0.075]
+  ],
+  "mesh_shape": [
+    ["data", 8],
+    ["replica", 1],
+    ["model", 1],
+    ["replica_dcn", 1]
+  ],
+  "model_config_digest": "a7bf00dc7b190025159d2189451e51598853273955181a84553e06f1962abc34",
+  "name": "snowball-levanter-gpu-v1",
+  "parameter_digest": "d819cbc63780bd866a942e47f9283cbd7932bbb237b52df527edd750c65be8f0",
+  "platform": "gpu",
+  "prompt_fixture_digest": "47863868cbfe336739c8097535f113f4d2dae4954f772eb91511c911433596e8",
+  "runtime_fingerprint_digest": "4e0f91801f3a32d81b630dff9c18701db013d66aff32705263112582e35dbcd2",
+  "schema_version": 2
+}

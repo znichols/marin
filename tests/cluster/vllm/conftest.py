@@ -11,7 +11,14 @@ and registers remote-job helpers for by-value pickling.
 import cloudpickle
 import pytest
 
-from tests.cluster.vllm import backend_parity, snowball, snowball_checkpoint
+from tests.cluster.vllm import (
+    backend_parity,
+    snowball,
+    snowball_checkpoint,
+    snowball_exported_levanter,
+    snowball_levanter,
+    snowball_vllm,
+)
 
 VLLM_ATTENTION_BACKENDS = ("FLASH_ATTN", "TRITON_ATTN")
 
@@ -19,6 +26,9 @@ VLLM_ATTENTION_BACKENDS = ("FLASH_ATTN", "TRITON_ATTN")
 cloudpickle.register_pickle_by_value(snowball)
 cloudpickle.register_pickle_by_value(snowball_checkpoint)
 cloudpickle.register_pickle_by_value(backend_parity)
+cloudpickle.register_pickle_by_value(snowball_levanter)
+cloudpickle.register_pickle_by_value(snowball_exported_levanter)
+cloudpickle.register_pickle_by_value(snowball_vllm)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

@@ -1,0 +1,31 @@
+{
+  "backend": "vllm",
+  "candidate_revision": "a4806a81a825d8238e8c5f38210d4c904bc018f3",
+  "canonical_golden_digest": "84fbb4229cab10a98a4010f84f39d28894d59b8b5c95ce0d39d031f0fa69fbbf",
+  "code_digest": "4d2fc8859ae3ac0c822adf6019383e5ea4a006bd0262aea80963223c421d5fdd",
+  "device_kind": "TPU v6 lite",
+  "exact_top_scores": false,
+  "fork_source_revisions": [
+    ["vllm", "b66e4159789e09a87ce0b9e8bf679c46bb78ffe8"],
+    ["tpu-inference", "88674e89b2fa120622448fe06ed00ae5e9b1faef"]
+  ],
+  "max_probability_error_by_bucket": [
+    [256, 0.04],
+    [1024, 0.05],
+    [4096, 0.1],
+    [16384, 0.7],
+    [32768, 0.5]
+  ],
+  "mesh_shape": [
+    ["tensor", 8],
+    ["data", 1],
+    ["expert", 1]
+  ],
+  "model_config_digest": "a7bf00dc7b190025159d2189451e51598853273955181a84553e06f1962abc34",
+  "name": "snowball-vllm-tpu-compatibility-smoke-v1",
+  "parameter_digest": "d819cbc63780bd866a942e47f9283cbd7932bbb237b52df527edd750c65be8f0",
+  "platform": "tpu",
+  "prompt_fixture_digest": "47863868cbfe336739c8097535f113f4d2dae4954f772eb91511c911433596e8",
+  "runtime_fingerprint_digest": "14ab48159c163df15c74220743f1c5f214f9d56859855f476c82785750c381d3",
+  "schema_version": 2
+}
