@@ -1,8 +1,8 @@
 {
   "backend": "levanter-exported",
-  "candidate_revision": "a4806a81a825d8238e8c5f38210d4c904bc018f3",
+  "candidate_revision": "0dc73c93f54b9f6ec55a93579ee5ab89f48711f4",
   "canonical_golden_digest": "d695624cc411d7bf79a6c2e28f34538437985a9e07612d2a07a5095128ff4b2d",
-  "code_digest": "3e6c2ec1871df85b0a0f8d560fbf2cd9d2dfae2aa02bac72523791c9a865cd8c",
+  "code_digest": "c005a8005a0cd03268a4a8c6597c7df719f20255c145e7284e080aa6ead55c8b",
   "device_kind": "NVIDIA H100 80GB HBM3",
   "exact_top_scores": false,
   "fork_source_revisions": [],

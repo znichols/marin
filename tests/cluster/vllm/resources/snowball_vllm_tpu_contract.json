@@ -1,8 +1,8 @@
 {
   "backend": "vllm",
-  "candidate_revision": "a4806a81a825d8238e8c5f38210d4c904bc018f3",
+  "candidate_revision": "0dc73c93f54b9f6ec55a93579ee5ab89f48711f4",
   "canonical_golden_digest": "84fbb4229cab10a98a4010f84f39d28894d59b8b5c95ce0d39d031f0fa69fbbf",
-  "code_digest": "4d2fc8859ae3ac0c822adf6019383e5ea4a006bd0262aea80963223c421d5fdd",
+  "code_digest": "f11dd1e50480c98c555bac01ceb60d08f01c0720079bc1096c35cd04d8304b6f",
   "device_kind": "TPU v6 lite",
   "exact_top_scores": false,
   "fork_source_revisions": [

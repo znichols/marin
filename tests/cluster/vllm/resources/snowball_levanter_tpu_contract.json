@@ -1,8 +1,8 @@
 {
   "backend": "levanter-exported",
-  "candidate_revision": "a4806a81a825d8238e8c5f38210d4c904bc018f3",
+  "candidate_revision": "0dc73c93f54b9f6ec55a93579ee5ab89f48711f4",
   "canonical_golden_digest": "84fbb4229cab10a98a4010f84f39d28894d59b8b5c95ce0d39d031f0fa69fbbf",
-  "code_digest": "3e6c2ec1871df85b0a0f8d560fbf2cd9d2dfae2aa02bac72523791c9a865cd8c",
+  "code_digest": "c005a8005a0cd03268a4a8c6597c7df719f20255c145e7284e080aa6ead55c8b",
   "device_kind": "TPU v6 lite",
   "exact_top_scores": true,
   "fork_source_revisions": [],
