@@ -17,5 +17,6 @@ package = false
 prerelease = "allow"
 
 [tool.uv.sources]
-# Keep this branch-based: uv.lock pins the runtime commit, and the external dependency updater advances it.
-harbor = { git = "https://github.com/marin-community/harbor.git", branch = "main" }
+# Pre-merge Harbor Pi continuation capture (marin-community/harbor#249).
+# Restore the upstream main-branch source after the PR merges.
+harbor = { git = "https://github.com/znichols/harbor.git", rev = "b9f5fe66060f4ccb5971f13c242f706859382969" }
