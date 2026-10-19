@@ -32,8 +32,10 @@ Marin FineStore and Rigging packages. The normal Marin environment and Iris
 the deployed Daytona SDK version, 0.200.2.
 
 Adapters retain their own Python requirements and dependency files. Run each
-adapter through its documented entry point; their Python ranges differ, so they
-are separate projects. The Tau3 package points to this local Harbor source.
+adapter through its documented entry point. Generator hosts require Python 3.12
+or newer; adapters with a higher minimum keep it. Benchmark guest environments
+retain their task-specific Python requirements. Adapter projects remain separate,
+and the Tau3 package points to this local Harbor source.
 
 Edit Harbor and its local Marin dependencies in the same pull request. Update
 Harbor's lock when a dependency manifest changes, and run

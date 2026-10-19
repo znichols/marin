@@ -7,7 +7,7 @@ authors = [
     { name = "Mohit Garg" },
     { name = "Ryan Marten", email = "ryan@harborframework.com" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "lica-gdb[metrics,svg-metrics]==0.2.1",
 ]

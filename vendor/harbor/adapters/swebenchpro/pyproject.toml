@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Robert Zhang", email = "0xrobertzhang@gmail.com" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "datasets",
 ]

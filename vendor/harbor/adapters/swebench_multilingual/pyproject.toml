@@ -7,7 +7,7 @@ authors = [
     { name = "Mengze Tang", email = "mengze@cs.wisc.edu" },
     { name = "Wanjia Zhang", email = "wanjiazh@stanford.edu" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "datasets",
     "swebench>=4.1.0",

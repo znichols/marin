@@ -3,7 +3,7 @@ name = "harbor-dolci-adapter"
 version = "0.1.0"
 description = "Harbor adapter for allenai/Dolci-RL-Zero-Mix-7B (math, code, code_stdio, ifeval)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "datasets>=2.14",
 ]

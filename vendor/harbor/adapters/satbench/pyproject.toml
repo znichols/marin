@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
   { name = "Anjiang Wei", email = "anjiang@cs.stanford.edu" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "datasets>=4.4.1",
   "pyyaml>=6.0.2",

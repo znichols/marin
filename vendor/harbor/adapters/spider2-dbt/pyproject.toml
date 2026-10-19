@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Yonghui Liu", email = "Yonghui.Liu@anu.edu.au" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "gdown",
     "pyyaml",

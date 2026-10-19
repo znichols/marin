@@ -7,7 +7,7 @@ authors = [
     { name = "Rebecca Deng", email = "rd629@cornell.edu" },
     { name = "Ryan Marten", email = "ryan@harborframework.com" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = []
 
 [project.scripts]

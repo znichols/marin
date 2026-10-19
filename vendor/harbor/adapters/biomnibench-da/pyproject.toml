@@ -3,7 +3,7 @@ name = "harbor-biomnibench-da-adapter"
 version = "0.1.0"
 description = "Harbor adapter for Phylo BiomniBench-DA"
 readme = "src/biomnibench_da/README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["harbor", "huggingface-hub>=1.3.2", "toml>=0.10.2", "openai==2.24.0"]
 
 [project.scripts]

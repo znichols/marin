@@ -3,7 +3,7 @@ name = "harbor-omnimath-adapter"
 version = "0.1.0"
 description = "Harbor adapter for OmniMath"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "datasets>=2.0.0",
 ]

@@ -3,7 +3,7 @@ name = "harbor-aider-polyglot-adapter"
 version = "0.1.0"
 description = "Harbor adapter for Aider Polyglot"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
     "rich>=13.7",
