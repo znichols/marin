@@ -28,6 +28,7 @@ from marin.evaluation.evalchemy.config import load_evalchemy_config
 from marin.evaluation.evalchemy.runner import EvalchemyExecutor
 from marin.evaluation.harbor.dataset import validate_harbor_dataset_source
 from marin.evaluation.harbor.driver_config import (
+    HARBOR_HISTORICAL_PROJECT,
     HARBOR_RUNTIME_PROJECT,
     ValidatedHarborConfig,
     harbor_runtime_descriptor,
@@ -232,7 +233,7 @@ def _resolve_definitions(
     runtime_commits = RUNTIME_COMMITS.get(version or "", {})
     harbor_commit = runtime_commits.get("harbor")
     harbor_project = (
-        f"{HARBOR_RUNTIME_PROJECT}/pins/{harbor_commit}" if harbor_commit is not None else HARBOR_RUNTIME_PROJECT
+        f"{HARBOR_HISTORICAL_PROJECT}/pins/{harbor_commit}" if harbor_commit is not None else HARBOR_RUNTIME_PROJECT
     )
     validated_configs = iter(preflight_harbor_configs(requests, runtime_project=harbor_project))
     evalchemy_commit = runtime_commits.get("evalchemy", EVALCHEMY.commit)

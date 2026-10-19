@@ -294,6 +294,18 @@ This enables JAX and other TPU-aware frameworks to initialize correctly inside j
 
 Jobs can include a `bundle_blob` containing workspace files. The controller stores these in a shared location accessible to all workers.
 
+Workspace `pyproject.toml` can exclude tracked files from every submitted bundle:
+
+```toml
+[tool.iris.bundle]
+exclude = ["^vendor/harbor/(adapters|tests)(/|$)"]
+```
+
+Patterns are regular expressions matched against paths relative to the workspace.
+For a generation job that needs excluded files, pass matching globs through
+`IrisClient.remote(..., extra_bundle_includes=["vendor/harbor/adapters/**/*"])`.
+Built-in exclusions and the caller's `bundle_exclude` still apply.
+
 **Configuration** (required):
 
 ```yaml

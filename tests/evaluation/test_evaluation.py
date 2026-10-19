@@ -36,8 +36,9 @@ from marin.evaluation.evalchemy.runner import (
 from marin.evaluation.evalchemy.runtime import EVALCHEMY_REQUIRED_EXTRAS
 from marin.evaluation.evaluation_config import EvalTaskConfig
 from marin.evaluation.harbor.driver_config import (
+    HARBOR_HISTORICAL_PROJECT,
     HARBOR_RUNTIME,
-    HARBOR_RUNTIME_PROJECT,
+    HARBOR_SOURCE,
     HarborDatasetKind,
     HarborErrorTaxonomy,
     ValidatedHarborConfig,
@@ -70,7 +71,7 @@ from marin.evaluation.runner import (
 )
 from marin.evaluation.serving_config import inference_config_for_model
 from marin.execution.step_status import STATUS_FAILED, STATUS_SUCCESS, StatusFile
-from marin.external_dependencies import EVALCHEMY, HARBOR
+from marin.external_dependencies import EVALCHEMY
 from marin.inference.config import (
     EffectiveServing,
     ResolvedModelLocator,
@@ -111,7 +112,7 @@ def _install_fake_harbor_preflight(
     monkeypatch: pytest.MonkeyPatch,
     *,
     verifier_env_keys: tuple[str, ...] = (),
-    commit: str = HARBOR.commit,
+    commit: str = HARBOR_SOURCE.commit,
 ) -> list[Mapping[str, object]]:
     received: list[Mapping[str, object]] = []
 
@@ -192,7 +193,7 @@ def test_verified_harbor_launch_uses_locked_policy_runtime(monkeypatch):
     evaluation = build_evaluation_batch(spec, LaunchProvenance(git_sha="abc", launch_host="test"), "test").evaluations[0]
 
     assert isinstance(evaluation.executor, HarborExecutor)
-    assert evaluation.executor.config.runtime_project == f"{HARBOR_RUNTIME_PROJECT}/pins/{HARBOR_COMMIT}"
+    assert evaluation.executor.config.runtime_project == f"{HARBOR_HISTORICAL_PROJECT}/pins/{HARBOR_COMMIT}"
     assert evaluation.identity.eval_runtime == harbor_runtime_descriptor(
         HARBOR_COMMIT, evaluation.executor.config.runtime_project
     )
@@ -1932,7 +1933,7 @@ def test_build_evaluation_batch_combines_registry_evalchemy_and_harbor_configs(t
             "env": "daytona",
             "task_limit": 2,
             "config_digest": evaluation.identity.eval_ref.harbor.config_digest,
-            "harbor_config_commit": HARBOR.commit,
+            "harbor_config_commit": HARBOR_SOURCE.commit,
             "max_input_tokens": _PREFLIGHT_MAX_INPUT_TOKENS,
             "max_output_tokens": _PREFLIGHT_MAX_OUTPUT_TOKENS,
         },

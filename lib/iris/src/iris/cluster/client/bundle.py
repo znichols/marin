@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import tempfile
+import tomllib
 import zipfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -68,6 +69,16 @@ def _merge_exclude(extra: re.Pattern[str] | None) -> re.Pattern[str]:
     return re.compile(f"(?x:{DEFAULT_EXCLUDE.pattern})|(?:{extra.pattern})")
 
 
+def _workspace_exclude(workspace: Path) -> re.Pattern[str] | None:
+    project_path = workspace / "pyproject.toml"
+    if not project_path.is_file():
+        return None
+    with project_path.open("rb") as project_file:
+        project = tomllib.load(project_file)
+    patterns = project.get("tool", {}).get("iris", {}).get("bundle", {}).get("exclude", [])
+    return re.compile("|".join(f"(?:{pattern})" for pattern in patterns)) if patterns else None
+
+
 def collect_workspace_files(
     workspace: str | Path,
     *,
@@ -79,27 +90,32 @@ def collect_workspace_files(
     Uses git ls-files when available (respecting .gitignore), then adds back gitignored
     files needed at runtime: Iris's generated protobuf artifacts plus any caller-supplied
     ``extra_includes`` globs (relative to ``workspace``, e.g. a package's built frontend
-    ``dist``). Falls back to pattern-based exclusion when git is unavailable.
+    ``dist``). ``[tool.iris.bundle].exclude`` in the workspace's ``pyproject.toml``
+    excludes matching relative paths; explicit ``extra_includes`` override those
+    repository exclusions. Falls back to pattern-based exclusion when git is unavailable.
 
     Args:
         workspace: Root directory to bundle.
         exclude: Extra regex to exclude (merged with DEFAULT_EXCLUDE).
-        extra_includes: Glob patterns for gitignored files the caller needs bundled.
+        extra_includes: Glob patterns for gitignored or repository-excluded files the
+            caller needs bundled. Default and caller ``exclude`` patterns still apply.
 
     Returns:
         Sorted list of absolute paths.
     """
     workspace = Path(workspace)
     merged = _merge_exclude(exclude)
-
-    git_files = _get_git_non_ignored_files(workspace, merged)
-    if git_files is not None:
-        _include_generated_build_artifacts(workspace, git_files, merged, extra_includes)
-        return sorted(f for f in git_files if f.is_file())
-
-    return sorted(
-        f for f in workspace.rglob("*") if f.is_file() and not _should_exclude(str(f.relative_to(workspace)), merged)
-    )
+    files = _get_git_non_ignored_files(workspace, merged)
+    if files is None:
+        files = {
+            f for f in workspace.rglob("*") if f.is_file() and not _should_exclude(str(f.relative_to(workspace)), merged)
+        }
+    _include_bundle_files(workspace, files, merged, GENERATED_ARTIFACT_GLOBS)
+    repository_exclude = _workspace_exclude(workspace)
+    if repository_exclude is not None:
+        files = {f for f in files if not _should_exclude(f.relative_to(workspace).as_posix(), repository_exclude)}
+    _include_bundle_files(workspace, files, merged, extra_includes)
+    return sorted(f for f in files if f.is_file())
 
 
 def create_workspace_zip(
@@ -112,7 +128,7 @@ def create_workspace_zip(
     """Create a zip of the workspace and return the raw bytes.
 
     Suitable for Iris bundle uploads where the caller sends bytes directly.
-    ``extra_includes`` re-includes caller-specified gitignored files (see
+    ``extra_includes`` re-includes caller-specified gitignored or repository-excluded files (see
     :func:`collect_workspace_files`).
     """
     workspace = Path(workspace)
@@ -162,15 +178,15 @@ def _get_git_non_ignored_files(
         return None
 
 
-def _include_generated_build_artifacts(
+def _include_bundle_files(
     workspace: Path,
     files: set[Path],
     exclude: re.Pattern[str],
-    extra_includes: Sequence[str] = (),
+    patterns: Sequence[str],
 ) -> None:
-    """Add gitignored files needed at runtime: Iris's generated artifacts + caller globs."""
+    """Add files matching runtime artifact or explicit caller globs."""
     added = 0
-    for pattern in [*GENERATED_ARTIFACT_GLOBS, *extra_includes]:
+    for pattern in patterns:
         for path in workspace.glob(pattern):
             if path.is_file() and path not in files and not _should_exclude(str(path.relative_to(workspace)), exclude):
                 files.add(path)

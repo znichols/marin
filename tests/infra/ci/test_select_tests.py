@@ -3,8 +3,11 @@
 
 """Tests for the import-driven test selector (infra/ci/select_tests.py)."""
 
+import os
 import re
+import shutil
 import subprocess
+import sys
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
@@ -12,6 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from infra.ci import run_tests
 from infra.ci.select_tests import (
     SCOPES,
     UV_PACKAGE,
@@ -288,7 +292,13 @@ def test_local_selection_targets_ci_tool_dependents(tmp_path: Path) -> None:
             "lib/verifyit/src/verifyit/grading.py",
             ["rolloutengine-unit", "taskcompendium-unit", "taskforge-unit"],
         ),
-        ("lib/rigging/src/rigging/message.py", ["rolloutengine-unit", "taskcompendium-unit", "taskforge-unit"]),
+        (
+            "lib/rigging/src/rigging/message.py",
+            ["harbor-unit", "rolloutengine-unit", "taskcompendium-unit", "taskforge-unit"],
+        ),
+        ("vendor/harbor/src/harbor/job.py", ["harbor-unit"]),
+        ("vendor/harbor/uv.lock", ["harbor-unit"]),
+        ("lib/finestore/src/finestore/table.py", ["harbor-unit"]),
         ("lib/iris/src/iris/client/client.py", ["iris-e2e-smoke", "taskforge-unit"]),
         ("lib/taskforge/src/taskforge/llm/glm_client.py", ["taskforge-unit"]),
     ],
@@ -312,15 +322,13 @@ def test_capability_environment_change_selects_the_taskforge_suite(tmp_path: Pat
     assert "taskforge-unit" in selection.suites
 
 
-@pytest.mark.parametrize(
-    "shellbox_result, expected_exit", [("success", 0), ("skipped", 0), ("failure", 1), ("cancelled", 1)]
-)
-def test_required_unit_check_propagates_shellbox_result(shellbox_result: str, expected_exit: int) -> None:
+@pytest.mark.parametrize("job", ["shellbox", "harbor"])
+@pytest.mark.parametrize("job_result, expected_exit", [("success", 0), ("skipped", 0), ("failure", 1), ("cancelled", 1)])
+def test_required_unit_check_propagates_job_result(job: str, job_result: str, expected_exit: int) -> None:
     workflow_path = Path(__file__).resolve().parents[3] / ".github/workflows/unified-unit.yaml"
     aggregate = yaml.safe_load(workflow_path.read_text())["jobs"]["unit_tests"]
     results = dict.fromkeys(aggregate["needs"], "success")
-    if "shellbox" in results:
-        results["shellbox"] = shellbox_result
+    results[job] = job_result
     script = re.sub(
         r"\$\{\{ needs\.(\w+)\.result \}\}",
         lambda match: results.get(match.group(1), ""),
@@ -330,6 +338,49 @@ def test_required_unit_check_propagates_shellbox_result(shellbox_result: str, ex
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
 
     assert result.returncode == expected_exit
+
+
+@pytest.mark.parametrize("lock_status,test_status", [(0, 0), (0, 7), (3, 0)])
+def test_local_runner_executes_harbor_only_changes_and_propagates_failures(
+    tmp_path: Path, lock_status: int, test_status: int
+) -> None:
+    source_root = Path(run_tests.__file__).resolve().parents[2]
+    for name in ("run_tests.py", "run_harbor_tests.py", "select_tests.py"):
+        target = tmp_path / "infra/ci" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_root / "infra/ci" / name, target)
+    task = write(tmp_path, "vendor/harbor/src/harbor/job.py", "INITIAL = 1\n")
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    task.write_text("CHANGED = 2\n")
+    uv = write(
+        tmp_path,
+        "bin/uv",
+        f"""\
+        #!/bin/sh
+        if [ "$1" = lock ]; then exit {lock_status}; fi
+        touch harbor-tests-ran
+        exit {test_status}
+        """,
+    )
+    uv.chmod(0o755)
+    result = subprocess.run(
+        [sys.executable, str(tmp_path / "infra/ci/run_tests.py"), "--base-ref", "HEAD", "--workers", "2"],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{uv.parent}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == (lock_status or test_status), result.stderr
+    assert (tmp_path / "harbor-tests-ran").exists() == (lock_status == 0)
 
 
 @pytest.mark.parametrize("changed_file", ["pyproject.toml", "uv.lock"])

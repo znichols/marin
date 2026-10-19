@@ -3,13 +3,14 @@
 
 """Opaque Harbor policies and the isolated-driver process protocol."""
 
+import hashlib
 import json
 import logging
 import subprocess
 import tempfile
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -19,8 +20,8 @@ from rigging.tunnel import terminate_process_group
 
 from marin.evaluation.eval_env import env_vars_from_keys
 from marin.evaluation.harbor.driver_protocol import FULL_GIT_COMMIT_LENGTH
+from marin.evaluation.harbor.provenance import vendored_harbor_source, vendored_runtime_digest
 from marin.evaluation.records import BenchmarkMetadataRef
-from marin.external_dependencies import HARBOR
 from marin.inference.iris import InferenceBackendState
 
 _TRIAL_DRIVER = Path(__file__).with_name("trial_driver.py")
@@ -74,42 +75,55 @@ _DRIVER_STORAGE_ENV_KEYS = (
     "GOOGLE_CLOUD_PROJECT",
 )
 
-HARBOR_RUNTIME_PROJECT = "config/external/harbor"
-
-
-def harbor_runtime_descriptor(commit: str, runtime_project: str = HARBOR_RUNTIME_PROJECT) -> str:
-    dependency = replace(HARBOR, commit=commit)
-    if runtime_project == HARBOR_RUNTIME_PROJECT:
-        requirements = dependency.runtime_requirements
-    else:
-        lock_path = _harbor_env_dir(runtime_project) / "uv.lock"
-        with lock_path.open("rb") as lock_file:
-            packages = tomllib.load(lock_file)["package"]
-        by_name = {package["name"]: package for package in packages}
-        locked_commit = by_name["harbor"]["source"]["git"].rsplit("#", 1)[-1]
-        if locked_commit != commit:
-            raise ValueError(f"Harbor lock {lock_path} pins {locked_commit}, expected {commit}")
-        direct_dependencies = by_name["marin-external-harbor"]["dependencies"]
-        requirements = tuple(
-            f"{name}=={by_name[name]['version']}" for entry in direct_dependencies if (name := entry["name"]) != "harbor"
-        )
-    return "; ".join((dependency.requirement(("archive",)), *requirements))
-
-
-HARBOR_RUNTIME = harbor_runtime_descriptor(HARBOR.commit)
-
-# The isolated driver runs against the fully pinned lock under this directory, not a loose ``--with``
-# resolution: the git-branch and pre-release pins (harbor, litellm) drift daily, and only the locked
-# set is validated to import and to carry the fsspec backends the remote ``jobs_dir`` needs.
-logger = logging.getLogger(__name__)
+HARBOR_RUNTIME_PROJECT = "vendor/harbor"
+HARBOR_HISTORICAL_PROJECT = "config/external/harbor"
 
 
 def _harbor_env_dir(runtime_project: str) -> Path:
-    """Resolve a locked isolated-driver project in the local Marin workspace."""
+    """Resolve an isolated-driver project in the local Marin workspace."""
     workspace_root = find_project_root(Path(__file__))
     if workspace_root is None:
-        raise RuntimeError("Harbor driver requires a Marin workspace to locate its pinned environment")
+        raise RuntimeError("Harbor driver requires a Marin workspace to locate its environment")
     return workspace_root / runtime_project
+
+
+def harbor_runtime_descriptor(commit: str, runtime_project: str = HARBOR_RUNTIME_PROJECT) -> str:
+    if runtime_project == HARBOR_RUNTIME_PROJECT:
+        project = _harbor_env_dir(runtime_project)
+        source = vendored_harbor_source(project)
+        if source.commit != commit:
+            raise ValueError(f"Vendored Harbor comes from {source.commit}, expected {commit}")
+        workspace_root = project.parent.parent
+        lock_digest = hashlib.sha256((project / "uv.lock").read_bytes()).hexdigest()
+        return "; ".join(
+            (
+                f"harbor[runtime] @ {runtime_project}",
+                f"upstream={source.repository}@{source.commit}",
+                f"source={vendored_runtime_digest(workspace_root)}",
+                f"lock=sha256:{lock_digest}",
+            )
+        )
+    lock_path = _harbor_env_dir(runtime_project) / "uv.lock"
+    with lock_path.open("rb") as lock_file:
+        packages = tomllib.load(lock_file)["package"]
+    by_name = {package["name"]: package for package in packages}
+    repository, locked_commit = by_name["harbor"]["source"]["git"].rsplit("#", 1)
+    if locked_commit != commit:
+        raise ValueError(f"Harbor lock {lock_path} pins {locked_commit}, expected {commit}")
+    direct_dependencies = by_name["marin-external-harbor"]["dependencies"]
+    extras = next(entry.get("extra", []) for entry in direct_dependencies if entry["name"] == "harbor")
+    distribution = f"harbor[{','.join(extras)}]" if extras else "harbor"
+    requirement = f"{distribution} @ git+{repository.split('?', 1)[0]}@{commit}"
+    requirements = tuple(
+        f"{name}=={by_name[name]['version']}" for entry in direct_dependencies if (name := entry["name"]) != "harbor"
+    )
+    return "; ".join((requirement, *requirements))
+
+
+HARBOR_SOURCE = vendored_harbor_source(_harbor_env_dir(HARBOR_RUNTIME_PROJECT))
+HARBOR_RUNTIME = harbor_runtime_descriptor(HARBOR_SOURCE.commit)
+
+logger = logging.getLogger(__name__)
 
 
 class HarborDatasetKind(StrEnum):
@@ -191,12 +205,17 @@ class HarborRuntimeOverlay:
 
 
 def _driver_command(runtime_project: str, command: str, *paths: Path) -> list[str]:
+    project = _harbor_env_dir(runtime_project)
+    selection = (
+        ["--project", str(project), "--extra", "runtime", "--no-default-groups"]
+        if runtime_project == HARBOR_RUNTIME_PROJECT
+        else ["--project", str(project)]
+    )
     return [
         "uv",
         "run",
         "--isolated",
-        "--project",
-        str(_harbor_env_dir(runtime_project)),
+        *selection,
         "--frozen",
         "python",
         str(_TRIAL_DRIVER),
@@ -418,7 +437,7 @@ def run_harbor_driver(
     backend_state: Callable[[], InferenceBackendState],
 ) -> None:
     """Apply a runtime overlay and run one Harbor job in the isolated environment."""
-    runtime = {"version": HARBOR.version, "commit": config.error_taxonomy.commit}
+    runtime = {"project": config.runtime_project, "commit": config.error_taxonomy.commit}
     logger.info("Harbor runtime: %s", json.dumps(runtime, sort_keys=True), extra={"harbor_runtime": runtime})
     with tempfile.TemporaryDirectory(prefix="marin-harbor-run-") as temp_dir:
         policy_path = Path(temp_dir) / "policy.json"

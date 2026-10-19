@@ -3,8 +3,11 @@
 
 """Tests for workspace bundling."""
 
+import io
 import os
 import re
+import subprocess
+import zipfile
 from unittest.mock import patch
 
 import pytest
@@ -94,6 +97,55 @@ def test_extra_exclude_is_matched_literally_not_verbose(workspace):
     rel = {str(f.relative_to(workspace)) for f in files}
     assert "mydir/drop.txt" not in rel
     assert "my dir/keep.txt" in rel
+
+
+@pytest.mark.parametrize("use_git", [True, False], ids=["git-checkout", "unpacked-workspace"])
+def test_repository_excludes_keep_runtime_and_allow_explicit_generation_files(workspace, use_git):
+    (workspace / "pyproject.toml").write_text(
+        '[project]\nname = "test"\n[tool.iris.bundle]\nexclude = ["^vendor/harbor/(adapters|tests)(/|$)"]\n'
+    )
+    runtime_paths = {
+        "vendor/harbor/pyproject.toml",
+        "vendor/harbor/uv.lock",
+        "vendor/harbor/UPSTREAM.toml",
+        "vendor/harbor/src/harbor/job.py",
+        "vendor/harbor/src/harbor_config/__init__.py",
+        "lib/rigging/src/rigging/__init__.py",
+        "lib/finestore/src/finestore/__init__.py",
+    }
+    generation_path = "vendor/harbor/adapters/example/generate.py"
+    test_path = "vendor/harbor/tests/unit/test_job.py"
+    for relative in runtime_paths | {generation_path, test_path}:
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative)
+    if use_git:
+        subprocess.run(["git", "init", "--quiet", str(workspace)], check=True)
+        subprocess.run(["git", "-C", str(workspace), "add", "."], check=True)
+
+    with zipfile.ZipFile(io.BytesIO(create_workspace_zip(workspace))) as archive:
+        names = set(archive.namelist())
+        assert runtime_paths <= names
+        assert generation_path not in names
+        assert test_path not in names
+    with zipfile.ZipFile(
+        io.BytesIO(create_workspace_zip(workspace, extra_includes=["vendor/harbor/adapters/**/*.py", "**/*.pyc"]))
+    ) as archive:
+        names = set(archive.namelist())
+        assert runtime_paths <= names
+        assert generation_path in names
+        assert test_path not in names
+        assert not any(name.endswith(".pyc") for name in names)
+    with zipfile.ZipFile(
+        io.BytesIO(
+            create_workspace_zip(
+                workspace,
+                extra_includes=["vendor/harbor/adapters/**/*.py"],
+                exclude=re.compile("generate[.]py$"),
+            )
+        )
+    ) as archive:
+        assert generation_path not in archive.namelist()
 
 
 def test_zip_rejects_oversized_bundles(workspace):

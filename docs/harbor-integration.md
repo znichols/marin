@@ -74,7 +74,7 @@ uv run python -m experiments.evaluation.cli launch \
 ```
 
 `--harbor-config` is repeatable and additive with `--evals`. All selected built-in and supplied
-Harbor policies pass pinned-schema and placeholder effective-job validation before the launcher
+Harbor policies pass schema and placeholder effective-job validation before the launcher
 opens an Iris client.
 
 ## Credentials
@@ -141,9 +141,9 @@ secret source declarations in `experiments/evaluation/evals.py`.
 
 ## Ownership boundary
 
-Marin's Harbor evaluation runs in isolated uv environments. The root workspace also locks an
-optional Harbor dependency for TaskCompendium's adapters. Evaluation uses the exact Git revision
-identified by `marin.external_dependencies.HARBOR` for two isolated calls:
+Harbor lives in `vendor/harbor` as an independent uv project with its own lockfile. It uses editable
+local Rigging and FineStore sources. Marin has no Harbor dependency; its launcher invokes Harbor
+through an isolated subprocess CLI for two calls:
 
 1. Preflight parses YAML or JSON with Harbor's Pydantic models, rejects unsupported launch shapes,
    validates a placeholder model/endpoint overlay, loads the dataset through Harbor to count tasks,
@@ -156,10 +156,16 @@ Runtime values do not change the source-policy digest. Policy kwargs override mo
 the served endpoint/model, output paths, local source path, and explicit `--limit` override both.
 Temporary policy and overlay files are owner-readable and removed after each isolated call.
 
+The default runtime uses `vendor/harbor/uv.lock`. Its runtime descriptor records the upstream
+revision from `UPSTREAM.toml`, the lock digest, and a digest of the packaged source and local Marin
+libraries. Published September evaluation cohorts keep their frozen Git runtimes under
+`config/external/harbor/pins/`. See the [vendor maintenance guide](../vendor/harbor/README.md) for
+dependency updates, retained adapters, and direct CLI commands.
+
 ### Trial error taxonomy
 
 Preflight snapshots Harbor's infrastructure, agent, passthrough, and undecided error categories from
-the pinned Harbor runtime in the isolated environment. Marin uses that snapshot to classify trial results and records
+the selected Harbor runtime in the isolated environment. Marin uses that snapshot to classify trial results and records
 the Harbor commit SHA in `record.json`. Undecided errors are known to Harbor but have no default scoring
 policy; Marin leaves them ungraded and counts them against the completion gate. Names absent from all
 four categories fail the run as an infrastructure failure, so taxonomy changes cannot silently alter

@@ -12,14 +12,15 @@ from pathlib import Path
 
 import pytest
 import yaml
+from marin.evaluation.eval_policy import HARBOR_COMMIT
 from marin.evaluation.harbor.dataset import local_harbor_dataset_path
-from marin.evaluation.harbor.driver_config import preflight_harbor_configs
+from marin.evaluation.harbor.driver_config import HARBOR_SOURCE, preflight_harbor_configs
 
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(180)]
 
 _ROOT = Path(__file__).parents[2]
 _DRIVER = _ROOT / "lib/marin/src/marin/evaluation/harbor/trial_driver.py"
-_EXTERNAL_PROJECT = _ROOT / "config/external/harbor"
+_RUNTIME_PROJECT = _ROOT / "vendor/harbor"
 _POLICIES = _ROOT / "experiments/evaluation/configs/harbor"
 _INVALID_SOURCE_DOCUMENTS = {
     "hf-uri-in-path": {
@@ -51,6 +52,7 @@ def _external_python(
     hash_seed: str = "0",
     check: bool = True,
     extra_python_path: Path | None = None,
+    runtime_project: Path = _RUNTIME_PROJECT,
 ) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONHASHSEED"] = hash_seed
@@ -58,22 +60,63 @@ def _external_python(
     if extra_python_path is not None:
         python_paths.insert(0, str(extra_python_path))
     environment["PYTHONPATH"] = os.pathsep.join(python_paths)
-    return subprocess.run(
+    selection = ["--extra", "runtime", "--no-default-groups"] if runtime_project == _RUNTIME_PROJECT else []
+    completed = subprocess.run(
         [
             "uv",
             "run",
             "--isolated",
             "--project",
-            str(_EXTERNAL_PROJECT),
+            str(runtime_project),
+            *selection,
             "--frozen",
             "python",
             *args,
         ],
-        check=check,
+        check=False,
         capture_output=True,
         text=True,
         env=environment,
     )
+    if check:
+        completed.check_returncode()
+    return completed
+
+
+def test_selected_runtime_imports_vendored_harbor_and_local_marin_packages():
+    script = textwrap.dedent(
+        """
+        import inspect
+        import json
+        import finestore
+        import harbor_config
+        import rigging
+        from marin.evaluation.harbor.trial_driver import _harbor_config_commit
+
+        print(json.dumps({
+            "harbor_config": inspect.getfile(harbor_config.JobConfig),
+            "rigging": rigging.__file__,
+            "finestore": finestore.__file__,
+            "commit": _harbor_config_commit(),
+        }))
+        """
+    )
+
+    imported = json.loads(_external_python("-c", script).stdout)
+
+    assert Path(imported["harbor_config"]).is_relative_to(_ROOT / "vendor/harbor/src")
+    assert Path(imported["rigging"]).is_relative_to(_ROOT / "lib/rigging/src")
+    assert Path(imported["finestore"]).is_relative_to(_ROOT / "lib/finestore/src")
+    assert imported["commit"] == HARBOR_SOURCE.commit
+
+
+def test_historical_runtime_reports_its_imported_git_source():
+    script = "from marin.evaluation.harbor.trial_driver import _harbor_config_commit; print(_harbor_config_commit())"
+    project = _ROOT / "config/external/harbor/pins" / HARBOR_COMMIT
+
+    completed = _external_python("-c", script, runtime_project=project)
+
+    assert completed.stdout.strip() == HARBOR_COMMIT
 
 
 def _preflight(
@@ -279,7 +322,7 @@ def test_preflight_exports_pinned_harbor_error_taxonomy(checked_policies):
         "VerificationNotCompletedError",
         "VerifierTimeoutError",
     }
-    assert taxonomies[0]["commit"] == "06139137912c5764a889e7613c1d5a5eb0704448"
+    assert taxonomies[0]["commit"] == HARBOR_SOURCE.commit
 
 
 def test_preflight_reports_agent_context_resolved_from_the_served_model(tmp_path):
@@ -463,8 +506,11 @@ datasets:
         )
         task_dir = launch_dir / "tasks" / "task-one"
         task_dir.mkdir(parents=True)
-        (task_dir / "task.toml").write_text('version = "1.0"\n[task]\nname = "task-one"\n[environment]\n')
+        (task_dir / "task.toml").write_text('version = "1.0"\n[task]\nname = "marin/task-one"\n[environment]\n')
         (task_dir / "instruction.md").write_text("Solve the task.")
+        (task_dir / "environment").mkdir()
+        (task_dir / "tests").mkdir()
+        (task_dir / "tests/test.sh").write_text("exit 0\n")
 
         (config,) = preflight_harbor_configs([(policy_path, {})])
         assert config.benchmark.n_benchmark == 1
@@ -503,6 +549,8 @@ def test_effective_job_applies_runtime_precedence_and_validates_nested_updates(t
                     "OPENAI_BASE_URL": "https://judge.example/capability/v1",
                     "MODEL_NAME": "judge-model",
                 },
+                "archive_root": str(tmp_path / "archive"),
+                "archive_dataset": "hf://DCAgent/dev_set_v2",
             }
         )
     )
@@ -656,6 +704,7 @@ def test_effective_terminus_job_applies_output_limit_to_llm_requests(tmp_path, p
                 "model_agent_kwargs": {
                     "model_info": {"max_input_tokens": 65536, "max_output_tokens": 32768},
                 },
+                "verifier_env": {},
                 "archive_root": str(tmp_path / "archive"),
                 "archive_dataset": "terminal-bench",
             }
@@ -690,6 +739,8 @@ def test_effective_aime_job_preserves_capability_url_in_live_config_and_redacts_
                 "task_limit": 3,
                 "model_agent_kwargs": {},
                 "verifier_env": {},
+                "archive_root": str(tmp_path / "archive"),
+                "archive_dataset": "aime",
             }
         )
     )
