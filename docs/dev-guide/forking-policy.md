@@ -1,11 +1,7 @@
 # Forking Policy
 
 When Marin needs a modified version of an upstream package, we maintain a fork
-under the `marin-community` GitHub organization. Harbor is maintained in
-`vendor/harbor` so runtime and Marin API changes can land together. Its isolated
-evaluation environment uses its own uv project and lock with local Marin dependencies; it is
-excluded from default workspace installs and the fork refresh automation.
-Each external fork carries Marin's patches on top of an upstream base,
+under the `marin-community` GitHub organization. Each fork carries Marin's patches on top of an upstream base,
 and an automated weekly process keeps it close to upstream. This page describes
 how Marin pins a fork and how the refresh runs.
 
