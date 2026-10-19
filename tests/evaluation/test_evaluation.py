@@ -37,7 +37,6 @@ from marin.evaluation.evalchemy.runtime import EVALCHEMY_REQUIRED_EXTRAS
 from marin.evaluation.evaluation_config import EvalTaskConfig
 from marin.evaluation.harbor.driver_config import (
     HARBOR_HISTORICAL_PROJECT,
-    HARBOR_RUNTIME,
     HARBOR_SOURCE,
     HarborDatasetKind,
     HarborErrorTaxonomy,
@@ -1555,7 +1554,9 @@ def test_build_evaluation_batch_merges_the_shared_daytona_spec(monkeypatch):
             "gcp-secret://projects/hai-gcp-models/secrets/DAYTONA_EVAL_API_KEY/versions/latest",
         )
     }
-    assert {evaluation.identity.eval_runtime for evaluation in batch.evaluations} == {HARBOR_RUNTIME}
+    assert {evaluation.identity.eval_runtime for evaluation in batch.evaluations} == {
+        harbor_runtime_descriptor(HARBOR_SOURCE.commit)
+    }
     assert all(evaluation.endpoint_route is EndpointRoute.CAPABILITY for evaluation in batch.evaluations)
     assert all(evaluation.identity.eval_ref.harbor.config_digest for evaluation in batch.evaluations)
     assert all(evaluation.identity.eval_ref.harbor.task_limit == 1 for evaluation in batch.evaluations)

@@ -430,10 +430,16 @@ def test_managed_harbor_pauses_and_resumes_after_inference_recovers(tmp_path, mo
 
 @pytest.fixture
 def vendored_runtime_workspace(tmp_path):
-    for relative in ("vendor/harbor/src/harbor", "lib/rigging/src/rigging", "lib/finestore/src/finestore"):
+    for relative in (
+        "vendor/harbor/src/harbor",
+        "lib/rigging/src/rigging",
+        "lib/finestore/src/finestore",
+        "lib/marin/src/marin/evaluation/harbor",
+    ):
         directory = tmp_path / relative
         directory.mkdir(parents=True)
         (directory / "__init__.py").write_text("runtime = 1\n")
+    (tmp_path / "lib/marin/src/marin/evaluation/harbor/trial_driver.py").write_text("runtime = 1\n")
     for relative in ("vendor/harbor", "lib/rigging", "lib/finestore"):
         (tmp_path / relative / "pyproject.toml").write_text('[project]\nname = "example"\n')
     (tmp_path / "vendor/harbor/UPSTREAM.toml").write_text(
@@ -453,6 +459,7 @@ def vendored_runtime_workspace(tmp_path):
         "vendor/harbor/uv.lock",
         "lib/rigging/src/rigging/__init__.py",
         "lib/finestore/src/finestore/__init__.py",
+        "lib/marin/src/marin/evaluation/harbor/trial_driver.py",
     ],
 )
 def test_vendored_runtime_identity_changes_with_executed_sources(vendored_runtime_workspace, relative, monkeypatch):

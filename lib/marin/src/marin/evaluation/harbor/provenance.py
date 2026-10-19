@@ -15,6 +15,7 @@ _RUNTIME_SOURCE_DIRECTORIES = (
     "vendor/harbor/src",
     "lib/rigging/src",
     "lib/finestore/src",
+    "lib/marin/src/marin/evaluation/harbor",
 )
 _RUNTIME_MANIFESTS = (
     "vendor/harbor/UPSTREAM.toml",

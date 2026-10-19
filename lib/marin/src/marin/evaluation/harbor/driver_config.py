@@ -121,7 +121,6 @@ def harbor_runtime_descriptor(commit: str, runtime_project: str = HARBOR_RUNTIME
 
 
 HARBOR_SOURCE = vendored_harbor_source(_harbor_env_dir(HARBOR_RUNTIME_PROJECT))
-HARBOR_RUNTIME = harbor_runtime_descriptor(HARBOR_SOURCE.commit)
 
 logger = logging.getLogger(__name__)
 
