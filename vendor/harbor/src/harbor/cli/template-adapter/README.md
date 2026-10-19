@@ -86,14 +86,14 @@ uv run harbor run -d {{ADAPTER_ID}} -a <agent_name> -m "<model_name>"
 ```
 from the harbor root to evaluate on the entire dataset.
 
-> [For adapter creators]: You will need to (1) upload the prepared task directories to https://github.com/laude-institute/harbor-datasets (2) Add your dataset entries to [registry.json](../../../registry.json) following a similar format as others. Only after all the PRs are merged, can you run the above scripts (otherwise the datasets are not yet registered). At development time, use the scripts below to run experiments.
+> [For adapter creators]: These commands require a dataset available in Harbor's hosted registry. For unregistered datasets, prepare local task directories and use `harbor run -p` as shown below. See the [upstream registry snapshot](https://github.com/marin-community/harbor/blob/aa65ab8d5796b0f1aad78c8a9db92b49725dd032/registry.json) for registry entry examples; Marin omits that snapshot and the publishing commands.
 
 However, if you choose to prepare the task directories locally and/or with custom versions/subsets for evaluation, you may either use `harbor run` or `harbor trial`. Instructions for using the adapter code to prepare task directories are provided in the [Usage](#usage-create-task-directories) session.
 
 ### Using Job Configurations
 The example configuration file(s) for the adapter is provided under `harbor/adapters/{{ADAPTER_ID}}`. You may either use `-c path/to/configuration.yaml` or `-p path/to/dataset` to run evaluation on the entire benchmark after preparing the task directories locally.
 
-> [For adapter creators]: Please specify the file(s), e.g., `run_{{ADAPTER_ID}}.yaml`, `run_{{ADAPTER_ID}}-python.yaml` for subsets/versions. Examples of config yaml can be seen from [harbor/examples/configs](../../../examples/configs/).
+> [For adapter creators]: Please specify the file(s), e.g., `run_{{ADAPTER_ID}}.yaml`, `run_{{ADAPTER_ID}}-python.yaml` for subsets/versions. See the [upstream configuration examples](https://github.com/marin-community/harbor/tree/aa65ab8d5796b0f1aad78c8a9db92b49725dd032/examples/configs).
 
 ```bash
 # From the repository root
@@ -211,6 +211,6 @@ This adapter is developed and maintained by [<your_name>](mailto:<your_email>) f
 
 ## Acknowledgement
 
-If you used API keys provided via [adapters/parity_api_instructions.md](../parity_api_instructions.md) for running parity experiments, please include the following acknowledgement:
+If you used API keys provided via the [upstream parity API instructions](https://github.com/marin-community/harbor/blob/aa65ab8d5796b0f1aad78c8a9db92b49725dd032/adapters/parity_api_instructions.md) for running parity experiments, please include the following acknowledgement:
 
 > API inference compute for running parity tests is generously supported by [2077AI](https://www.2077ai.com/) (https://www.2077ai.com/).

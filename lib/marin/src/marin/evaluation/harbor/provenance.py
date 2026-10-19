@@ -3,10 +3,11 @@
 
 """Source identity for Marin's vendored Harbor runtime."""
 
-import hashlib
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from rigging.cache import combined_content_hash, directory_content_hash, file_content_hash
 
 from marin.evaluation.harbor.driver_protocol import FULL_GIT_COMMIT_LENGTH
 
@@ -44,19 +45,8 @@ def vendored_harbor_source(project: Path) -> HarborSource:
 
 def vendored_runtime_digest(workspace_root: Path) -> str:
     """Hash packaged Harbor assets and the local Marin dependencies it imports."""
-    paths = [workspace_root / relative for relative in _RUNTIME_MANIFESTS]
-    for relative in _RUNTIME_SOURCE_DIRECTORIES:
-        directory = workspace_root / relative
-        if not directory.is_dir():
-            raise FileNotFoundError(directory)
-        paths.extend(
-            path
-            for path in directory.rglob("*")
-            if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
-        )
-    digest = hashlib.sha256()
-    for path in sorted(paths):
-        digest.update(path.relative_to(workspace_root).as_posix().encode())
-        digest.update(b"\0")
-        digest.update(hashlib.sha256(path.read_bytes()).digest())
-    return f"sha256:{digest.hexdigest()}"
+    components = [
+        f"{relative}:{directory_content_hash(workspace_root / relative)}" for relative in _RUNTIME_SOURCE_DIRECTORIES
+    ]
+    components.extend(f"{relative}:{file_content_hash(workspace_root / relative)}" for relative in _RUNTIME_MANIFESTS)
+    return f"sha256:{combined_content_hash(components)}"

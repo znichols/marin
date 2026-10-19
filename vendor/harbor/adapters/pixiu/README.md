@@ -134,7 +134,7 @@ from the harbor root to evaluate on the **parity dataset**.
 
 **Dataset size**: The full PIXIU/FinBen benchmark has **54,083 tasks** across the 29 subcategories. For parity evaluation we use a **parity set of 435 tasks**: the first 15 tasks from each subcategory (no shuffling). The dataset registry and runs with `-d pixiu` both use this parity set only. To run the **full benchmark**, prepare all task directories locally following the adapter code; see [Usage: Create Task Directories](#usage-create-task-directories) for more details.
 
-The PIXIU parity dataset has been uploaded to https://github.com/laude-institute/harbor-datasets and registered in [registry.json](../../../registry.json) as `pixiu` with version `parity` and git commit `ee331a42b7ed0c6d5d00f788f5fa74959764b75b`.
+The PIXIU parity dataset has been uploaded to https://github.com/laude-institute/harbor-datasets and registered in the [upstream registry snapshot](https://github.com/marin-community/harbor/blob/aa65ab8d5796b0f1aad78c8a9db92b49725dd032/registry.json) as `pixiu` with version `parity` and git commit `ee331a42b7ed0c6d5d00f788f5fa74959764b75b`.
 
 
 ### Using Job Configurations
