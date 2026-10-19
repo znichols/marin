@@ -159,7 +159,7 @@ Temporary policy and overlay files are owner-readable and removed after each iso
 The default runtime uses `vendor/harbor/uv.lock`. Its runtime descriptor records the upstream
 revision from `UPSTREAM.toml`, the lock digest, and a digest of the packaged source and local Marin
 libraries. Published September evaluation cohorts keep their frozen Git runtimes under
-`config/external/harbor/pins/`. See the [vendor maintenance guide](../vendor/harbor/README.md) for
+`config/external/harbor/pins/`. See the [vendor maintenance guide](https://github.com/marin-community/marin/blob/main/vendor/harbor/README.md) for
 dependency updates, retained adapters, and direct CLI commands.
 
 ### Trial error taxonomy
