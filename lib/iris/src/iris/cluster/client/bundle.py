@@ -17,9 +17,9 @@ from iris.cluster.bundle import MAX_BUNDLE_SIZE_BYTES
 
 logger = logging.getLogger(__name__)
 
-# Default exclude pattern applied to all bundles.  Matches against the
-# *relative* path (forward-slash separated, no leading slash).
-DEFAULT_EXCLUDE = re.compile(
+# These exclusions also apply to explicitly included files. Patterns match paths
+# relative to the workspace, with forward slashes and no leading slash.
+ALWAYS_EXCLUDE = re.compile(
     r"""
       \.mov$                        # video files
     | \.pyc$                        # bytecode
@@ -33,11 +33,22 @@ DEFAULT_EXCLUDE = re.compile(
     | (^|/)\.venv(/|$)
     | (^|/)node_modules(/|$)
     | (^|/)venv(/|$)
-    | (^|/)docs/figures(/|$)
-    | (^|/)docs/images(/|$)
-    | (^|/)docs/reports(/|$)
-    | (^|/)docs/static(/|$)
-    | (^|/)tests/snapshots(/|$)
+    | (^|/)target(/|$)              # local Rust builds, including without git
+    | \.so$                        # local native extensions are installed from wheels
+    """,
+    re.VERBOSE,
+)
+
+# Explicit extra_includes can opt documentation or validation files back in.
+DEFAULT_EXCLUDE = re.compile(
+    ALWAYS_EXCLUDE.pattern
+    + r"""
+    | (^|/)docs(/|$)
+    | (^|/)tests(/|$)
+    | (^|/)\.(agents|claude|codex|github)(/|$)
+    | (^|/)(AGENTS|TESTING|OPS)\.md$
+    | \.ipynb$
+    | (^|/)journeys-out(/|$)        # generated browser screenshots
     """,
     re.VERBOSE,
 )
@@ -60,23 +71,25 @@ def _should_exclude(relative: str, exclude: re.Pattern[str]) -> bool:
     return bool(exclude.search(relative))
 
 
-def _merge_exclude(extra: re.Pattern[str] | None) -> re.Pattern[str]:
+def _merge_exclude(extra: re.Pattern[str] | None, defaults: re.Pattern[str] = DEFAULT_EXCLUDE) -> re.Pattern[str]:
     if extra is None:
-        return DEFAULT_EXCLUDE
-    # DEFAULT_EXCLUDE is authored in verbose form; scope re.VERBOSE to it with an
+        return defaults
+    # The defaults are authored in verbose form; scope re.VERBOSE to them with an
     # inline (?x:...) group so the caller's pattern keeps its literal whitespace
     # and '#' instead of having them silently treated as formatting.
-    return re.compile(f"(?x:{DEFAULT_EXCLUDE.pattern})|(?:{extra.pattern})")
+    return re.compile(f"(?x:{defaults.pattern})|(?:{extra.pattern})")
 
 
-def _workspace_exclude(workspace: Path) -> re.Pattern[str] | None:
+def _workspace_bundle_config(workspace: Path) -> tuple[re.Pattern[str] | None, tuple[str, ...]]:
     project_path = workspace / "pyproject.toml"
     if not project_path.is_file():
-        return None
+        return None, ()
     with project_path.open("rb") as project_file:
         project = tomllib.load(project_file)
-    patterns = project.get("tool", {}).get("iris", {}).get("bundle", {}).get("exclude", [])
-    return re.compile("|".join(f"(?:{pattern})" for pattern in patterns)) if patterns else None
+    config = project.get("tool", {}).get("iris", {}).get("bundle", {})
+    patterns = config.get("exclude", [])
+    exclude = re.compile("|".join(f"(?:{pattern})" for pattern in patterns)) if patterns else None
+    return exclude, tuple(config.get("include", []))
 
 
 def collect_workspace_files(
@@ -87,18 +100,22 @@ def collect_workspace_files(
 ) -> list[Path]:
     """Collect the list of files to include in a workspace bundle.
 
-    Uses git ls-files when available (respecting .gitignore), then adds back gitignored
-    files needed at runtime: Iris's generated protobuf artifacts plus any caller-supplied
+    Uses git ls-files when available (respecting .gitignore), then adds required
+    files: Iris's generated protobuf artifacts plus any caller-supplied
     ``extra_includes`` globs (relative to ``workspace``, e.g. a package's built frontend
-    ``dist``). ``[tool.iris.bundle].exclude`` in the workspace's ``pyproject.toml``
-    excludes matching relative paths; explicit ``extra_includes`` override those
-    repository exclusions. Falls back to pattern-based exclusion when git is unavailable.
+    ``dist``). Default exclusions also remove documentation, tests, agent/CI
+    metadata, notebooks, and local Rust builds, including tracked files. Falls
+    back to the same pattern-based exclusion when git is unavailable.
+
+    ``[tool.iris.bundle]`` in the workspace's ``pyproject.toml`` can include
+    runtime assets with globs and exclude paths with regular expressions.
+    Explicit ``extra_includes`` override repository exclusions.
 
     Args:
         workspace: Root directory to bundle.
         exclude: Extra regex to exclude (merged with DEFAULT_EXCLUDE).
-        extra_includes: Glob patterns for gitignored or repository-excluded files the
-            caller needs bundled. Default and caller ``exclude`` patterns still apply.
+        extra_includes: Globs for required files, including gitignored files and
+            files under tests or docs. Caller ``exclude`` and ALWAYS_EXCLUDE still apply.
 
     Returns:
         Sorted list of absolute paths.
@@ -110,11 +127,12 @@ def collect_workspace_files(
         files = {
             f for f in workspace.rglob("*") if f.is_file() and not _should_exclude(str(f.relative_to(workspace)), merged)
         }
-    _include_bundle_files(workspace, files, merged, GENERATED_ARTIFACT_GLOBS)
-    repository_exclude = _workspace_exclude(workspace)
+    explicit_exclude = _merge_exclude(exclude, ALWAYS_EXCLUDE)
+    repository_exclude, repository_includes = _workspace_bundle_config(workspace)
+    _include_bundle_files(workspace, files, explicit_exclude, (*GENERATED_ARTIFACT_GLOBS, *repository_includes))
     if repository_exclude is not None:
         files = {f for f in files if not _should_exclude(f.relative_to(workspace).as_posix(), repository_exclude)}
-    _include_bundle_files(workspace, files, merged, extra_includes)
+    _include_bundle_files(workspace, files, explicit_exclude, extra_includes)
     return sorted(f for f in files if f.is_file())
 
 
@@ -128,7 +146,7 @@ def create_workspace_zip(
     """Create a zip of the workspace and return the raw bytes.
 
     Suitable for Iris bundle uploads where the caller sends bytes directly.
-    ``extra_includes`` re-includes caller-specified gitignored or repository-excluded files (see
+    ``extra_includes`` re-includes caller-specified required files (see
     :func:`collect_workspace_files`).
     """
     workspace = Path(workspace)
