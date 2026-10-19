@@ -42,7 +42,6 @@ from marin.evaluation.harbor.agent_context import (
     MODEL_INFO_KEY,
     reconciled_model_info,
 )
-from marin.evaluation.harbor.driver_protocol import FULL_GIT_COMMIT_LENGTH
 from marin.evaluation.harbor.provenance import vendored_harbor_source
 
 _HOSTED_VLLM_PROVIDER = "hosted_vllm"
@@ -383,18 +382,16 @@ def _stable_policy_json(config: JobConfig) -> str:
 
 
 def _harbor_config_commit() -> str:
-    direct_url = json.loads(importlib.metadata.distribution("harbor").read_text("direct_url.json") or "{}")
-    commit = direct_url.get("vcs_info", {}).get("commit_id")
-    if isinstance(commit, str) and len(commit) == FULL_GIT_COMMIT_LENGTH:
-        return commit
     workspace_root = find_project_root(Path(__file__))
-    if workspace_root is not None:
-        project = workspace_root / "vendor/harbor"
-        if direct_url.get("url") == project.resolve().as_uri() and Path(
-            inspect.getfile(JobConfig)
-        ).resolve().is_relative_to(project / "src"):
-            return vendored_harbor_source(project).commit
-    raise ValueError("Harbor distribution does not identify a pinned Git or vendored source")
+    if workspace_root is None:
+        raise ValueError("Harbor driver requires a Marin workspace to locate its vendored source")
+    project = workspace_root / "vendor/harbor"
+    direct_url = json.loads(importlib.metadata.distribution("harbor").read_text("direct_url.json") or "{}")
+    if direct_url.get("url") != project.resolve().as_uri() or not Path(
+        inspect.getfile(JobConfig)
+    ).resolve().is_relative_to(project / "src"):
+        raise ValueError(f"Harbor distribution must use the vendored source at {project}")
+    return vendored_harbor_source(project).commit
 
 
 def _preflight_one(path: Path, model_agent_kwargs: Mapping[str, object]) -> dict[str, object]:

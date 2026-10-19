@@ -42,4 +42,6 @@ Harbor's lock when a dependency manifest changes, and run
 `uv run --no-project infra/ci/run_harbor_tests.py` for the offline runtime checks.
 For an upstream import, export the selected Git tree, preserve adapters and
 templates, reapply the deliberate removals, and update `UPSTREAM.toml`.
-Historical evaluation environments remain in `config/external/harbor/pins/`.
+`UPSTREAM.toml` records the upstream import base; it does not select a Git runtime.
+All Harbor launches execute this checkout. Reproduce historical evaluation cohorts
+from their recorded Marin checkout.

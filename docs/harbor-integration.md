@@ -156,10 +156,12 @@ Runtime values do not change the source-policy digest. Policy kwargs override mo
 the served endpoint/model, output paths, local source path, and explicit `--limit` override both.
 Temporary policy and overlay files are owner-readable and removed after each isolated call.
 
-The default runtime uses `vendor/harbor/uv.lock`. Its runtime descriptor records the upstream
+The runtime uses `vendor/harbor/uv.lock`. Its runtime descriptor records the upstream
 revision from `UPSTREAM.toml`, the lock digest, and a digest of the packaged source and local Marin
-libraries. Published September evaluation cohorts keep their frozen Git runtimes under
-`config/external/harbor/pins/`. See the [vendor maintenance guide](https://github.com/marin-community/marin/blob/main/vendor/harbor/README.md) for
+libraries. The upstream revision identifies the import base; execution always uses the vendored
+source. Published September cohort labels remain validated against their original runtimes and
+cannot label new vendored runs. Reproduce historical runs from their recorded Marin checkout.
+See the [vendor maintenance guide](https://github.com/marin-community/marin/blob/main/vendor/harbor/README.md) for
 dependency updates, retained adapters, and direct CLI commands.
 
 ### Trial error taxonomy

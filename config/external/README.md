@@ -8,13 +8,13 @@ workspace so their dependency graphs do not have to resolve with Marin's
 training and serving dependencies. Each `pyproject.toml` selects an external
 source. Its adjacent `uv.lock` records the exact commit that Marin uses.
 
-Verified evaluation cohorts select revisions from `RUNTIME_COMMITS` in
-`lib/marin/src/marin/evaluation/eval_policy.py`. The `harbor/pins/<Harbor commit>/`
-snapshots retain their full dependency locks. Preflight and workers run the
-selected historical lock with `uv run --frozen`; the external dependency updater
-advances only the Evalchemy and MarinSkyRL projects. Current Harbor source lives
-under `vendor/harbor` with its own lock. It is excluded from workspace membership and
-default installs, including `uv sync --all-packages`.
+Verified Evalchemy launches select revisions from `RUNTIME_COMMITS` in
+`lib/marin/src/marin/evaluation/eval_policy.py`. The external dependency updater
+advances only the Evalchemy and MarinSkyRL projects. Harbor always runs the
+source under `vendor/harbor` with its own lock. Historical Harbor commit metadata
+validates saved cohort records and does not select executable dependencies.
+Harbor is excluded from workspace membership and default installs, including
+`uv sync --all-packages`.
 
 `vllm/gpu.toml` records the published CUDA release, Torch backend, and exact
 wheel URL and SHA-256 for each architecture. The
@@ -79,10 +79,6 @@ The external configurations intentionally model only what Marin needs:
 
 - `evalchemy` resolves the endpoint client core. Benchmark extras are selected
   by each evaluation at runtime.
-- `harbor/pins/` retains frozen Git runtimes for published evaluation cohorts.
-  Current Harbor and its `harbor_config` modules come from the vendored package
-  selected with `uv run --isolated --project vendor/harbor --extra runtime --frozen`.
-  Its local Marin dependencies use editable paths into this checkout.
 - `MarinSkyRL` tracks the repository-root `marinskyrl` distribution. The
   external lock resolves its CPU-safe base for the isolated launcher. The
   launcher synchronizes the selected `fsdp` or `megatron` profile from that

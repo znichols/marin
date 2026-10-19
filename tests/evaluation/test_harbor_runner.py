@@ -466,12 +466,12 @@ def test_vendored_runtime_identity_changes_with_executed_sources(vendored_runtim
     project = vendored_runtime_workspace / "vendor/harbor"
     upstream = vendored_harbor_source(project)
     monkeypatch.setattr(driver_config, "find_project_root", lambda _start: vendored_runtime_workspace)
-    original = driver_config.harbor_runtime_descriptor(upstream.commit)
+    original = driver_config.harbor_runtime_descriptor()
 
     path = vendored_runtime_workspace / relative
     path.write_bytes(path.read_bytes() + b"\nchanged\n")
 
-    assert driver_config.harbor_runtime_descriptor(upstream.commit) != original
+    assert driver_config.harbor_runtime_descriptor() != original
     assert vendored_harbor_source(project) == upstream
 
 
@@ -486,49 +486,12 @@ def test_vendored_runtime_identity_changes_with_executed_sources(vendored_runtim
 )
 def test_vendored_runtime_identity_ignores_unexecuted_files(vendored_runtime_workspace, monkeypatch, relative):
     monkeypatch.setattr(driver_config, "find_project_root", lambda _start: vendored_runtime_workspace)
-    original = driver_config.harbor_runtime_descriptor(driver_config.HARBOR_SOURCE.commit)
+    original = driver_config.harbor_runtime_descriptor()
     path = vendored_runtime_workspace / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"unexecuted")
 
-    assert driver_config.harbor_runtime_descriptor(driver_config.HARBOR_SOURCE.commit) == original
-
-
-def test_historical_harbor_descriptor_preserves_published_runtime():
-    commit = "21e0ea6a0cc1a0b617aebd86988ea93e1795f84a"
-
-    assert driver_config.harbor_runtime_descriptor(commit, f"config/external/harbor/pins/{commit}") == (
-        "harbor[archive] @ git+https://github.com/marin-community/harbor.git@"
-        "21e0ea6a0cc1a0b617aebd86988ea93e1795f84a; daytona==0.200.2; gcsfs==2026.7.0; "
-        "pydantic-settings==2.14.2; s3fs==2026.7.0"
-    )
-
-
-def test_historical_harbor_descriptor_uses_locked_dependencies(tmp_path, monkeypatch):
-    commit = "21e0ea6a0cc1a0b617aebd86988ea93e1795f84a"
-    project = f"config/external/harbor/pins/{commit}"
-    lock_dir = tmp_path / project
-    lock_dir.mkdir(parents=True)
-    (lock_dir / "uv.lock").write_text(
-        f"""
-[[package]]
-name = "harbor"
-source = {{ git = "https://example.org/historical-harbor.git?branch=main#{commit}" }}
-[[package]]
-name = "marin-external-harbor"
-dependencies = [{{ name = "harbor", extra = ["archive"] }}, {{ name = "gcsfs" }}]
-[[package]]
-name = "gcsfs"
-version = "1.0"
-"""
-    )
-    monkeypatch.setattr(driver_config, "find_project_root", lambda _start: tmp_path)
-
-    descriptor = driver_config.harbor_runtime_descriptor(commit, project)
-
-    assert descriptor == f"harbor[archive] @ git+https://example.org/historical-harbor.git@{commit}; gcsfs==1.0"
-    with pytest.raises(ValueError, match="pins"):
-        driver_config.harbor_runtime_descriptor("0" * 40, project)
+    assert driver_config.harbor_runtime_descriptor() == original
 
 
 def test_harbor_driver_terminates_when_dependency_becomes_unavailable(tmp_path, monkeypatch):

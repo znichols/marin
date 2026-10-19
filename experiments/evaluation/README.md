@@ -244,11 +244,12 @@ A dry run checks the YAML shape and the resolved Marin launch plan; task availab
 the Evalchemy process starts. [evalchemy#67](https://github.com/marin-community/evalchemy/issues/67)
 tracks a CLI validation mode that can move task-catalog errors back before Iris submission.
 
-For a `--version eval-policy-...-verified` launch, the launcher selects the Evalchemy and Harbor
-revisions in `RUNTIME_COMMITS` from `lib/marin/src/marin/evaluation/eval_policy.py`. Evalchemy's
-child requirement uses the pinned Evalchemy commit. Harbor preflight and workers use
-`config/external/harbor/pins/<Harbor commit>/uv.lock` with `uv run --frozen`. Launches without a
-verified policy version use the vendored Harbor project and the current Evalchemy pin in `config/external/`.
+For a `--version eval-policy-...-verified` launch, the launcher selects the Evalchemy revision
+in `RUNTIME_COMMITS` from `lib/marin/src/marin/evaluation/eval_policy.py`. Other Evalchemy launches
+use the current pin in `config/external/`. Harbor preflight and workers always use the vendored
+project and its lock. The published September cohort labels require their original Harbor runtime,
+so current Harbor launches cannot claim those labels. Historical commit metadata remains available
+to validate saved records; reproduce those runs from their recorded Marin checkout.
 
 `tasks` selects one or more evaluator task names. Use `task_options.<task>` for `num_fewshot`,
 `task_alias`, `generation`, `unsafe_code`, and `completion_only`; the remaining portable fields include

@@ -1,7 +1,7 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Behavior of the pinned Harbor policy boundary."""
+"""Behavior of the vendored Harbor policy boundary."""
 
 import json
 import os
@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from marin.evaluation.eval_policy import HARBOR_COMMIT
 from marin.evaluation.harbor.dataset import local_harbor_dataset_path
 from marin.evaluation.harbor.driver_config import HARBOR_SOURCE, preflight_harbor_configs
 
@@ -52,7 +51,6 @@ def _external_python(
     hash_seed: str = "0",
     check: bool = True,
     extra_python_path: Path | None = None,
-    runtime_project: Path = _RUNTIME_PROJECT,
 ) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONHASHSEED"] = hash_seed
@@ -60,15 +58,16 @@ def _external_python(
     if extra_python_path is not None:
         python_paths.insert(0, str(extra_python_path))
     environment["PYTHONPATH"] = os.pathsep.join(python_paths)
-    selection = ["--extra", "runtime", "--no-default-groups"] if runtime_project == _RUNTIME_PROJECT else []
     completed = subprocess.run(
         [
             "uv",
             "run",
             "--isolated",
             "--project",
-            str(runtime_project),
-            *selection,
+            str(_RUNTIME_PROJECT),
+            "--extra",
+            "runtime",
+            "--no-default-groups",
             "--frozen",
             "python",
             *args,
@@ -108,15 +107,6 @@ def test_selected_runtime_imports_vendored_harbor_and_local_marin_packages():
     assert Path(imported["rigging"]).is_relative_to(_ROOT / "lib/rigging/src")
     assert Path(imported["finestore"]).is_relative_to(_ROOT / "lib/finestore/src")
     assert imported["commit"] == HARBOR_SOURCE.commit
-
-
-def test_historical_runtime_reports_its_imported_git_source():
-    script = "from marin.evaluation.harbor.trial_driver import _harbor_config_commit; print(_harbor_config_commit())"
-    project = _ROOT / "config/external/harbor/pins" / HARBOR_COMMIT
-
-    completed = _external_python("-c", script, runtime_project=project)
-
-    assert completed.stdout.strip() == HARBOR_COMMIT
 
 
 def _preflight(
