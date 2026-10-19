@@ -12,6 +12,9 @@ distribution provides both the `harbor` and `harbor_config` Python modules.
 The website, results viewer, Hub result sharing, benchmark publishing commands,
 standalone config release tooling, and upstream development automation are
 omitted. Task collection and hashing remain part of evaluation job locking.
+Unused golden agent traces from omitted integration tests, the generated adapter
+parity summary, and regenerable BIRD parity evaluation inputs are omitted.
+Daytona snapshot fixtures remain for unit tests.
 The full upstream `registry.json` snapshot is also omitted. Named registry datasets
 use Harbor's hosted service; explicit registry URLs and paths remain supported.
 Registry subset generation requires an explicit `--registry` input file.
