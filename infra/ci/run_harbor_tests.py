@@ -30,23 +30,38 @@ def run_harbor_tests(repo_root: Path, extra_args: tuple[str, ...] = ()) -> int:
     if lock.returncode:
         return lock.returncode
     test_paths = sorted({str(path) for pattern in HARBOR_TEST_PATTERNS for path in repo_root.glob(pattern)})
+    pytest_command = [
+        "uv",
+        "run",
+        "--isolated",
+        "--project",
+        "vendor/harbor",
+        "--frozen",
+        "--extra",
+        "runtime",
+        "--group",
+        "test",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "-c",
+        "vendor/harbor/pyproject.toml",
+    ]
+    result = subprocess.run(
+        [*pytest_command, *test_paths, *extra_args],
+        cwd=repo_root,
+        check=False,
+    )
+    if result.returncode:
+        return result.returncode
+    # The acquisition tests' neighboring conftest imports Marin and Fray, which
+    # are outside Harbor's independent environment.
     result = subprocess.run(
         [
-            "uv",
-            "run",
-            "--isolated",
-            "--project",
-            "vendor/harbor",
-            "--frozen",
-            "--extra",
-            "runtime",
-            "--group",
-            "test",
-            "pytest",
-            "-q",
-            "-c",
-            "vendor/harbor/pyproject.toml",
-            *test_paths,
+            *pytest_command,
+            "--noconftest",
+            "experiments/post_training/task_curation/tests/test_harbor_hub.py",
             *extra_args,
         ],
         cwd=repo_root,
