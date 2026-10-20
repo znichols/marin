@@ -164,6 +164,23 @@ cannot label new vendored runs. Reproduce historical runs from their recorded Ma
 See the [vendor maintenance guide](https://github.com/marin-community/marin/blob/main/vendor/harbor/README.md) for
 dependency updates, retained adapters, and direct CLI commands.
 
+### Preparing MMAU tasks
+
+The MMAU generator's transcription JSON is cached as a checksum-pinned download artifact.
+Choose a local artifact directory or a region-local object-store prefix, then pass generator
+options after `--`:
+
+```bash
+uv run python -m experiments.evaluation.generate_mmau \
+  --artifact-root /path/to/artifact-cache -- \
+  --output-dir /path/to/mmau-tasks --limit 1
+```
+
+The wrapper downloads the exact upstream transcription file once, verifies its SHA-256,
+and stages the cached file locally while invoking the MMAU adapter in the isolated vendored runtime. Repeated
+generation with the same artifact root reuses that download. `--artifact-root` also accepts
+region-local `s3://` and `gs://` prefixes; generated task directories remain local.
+
 ### Trial error taxonomy
 
 Preflight snapshots Harbor's infrastructure, agent, passthrough, and undecided error categories from

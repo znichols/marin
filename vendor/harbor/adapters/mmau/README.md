@@ -4,7 +4,7 @@
 
 - **Dataset size:** 1000 Harbor tasks (from MMAU-test-mini dataset)
 
-[**MMAU Bench**](https://arxiv.org/abs/2410.19168) is a novel benchmark designed to evaluate multimodal audio understanding models on tasks requiring expert-level knowledge and complex reasoning. This adapter converts each dataset record into a Harbor task. Since the MMAU-test dataset does not provide ground-truth answers, we instead use the MMAU-test-mini dataset included in this repository.
+[**MMAU Bench**](https://arxiv.org/abs/2410.19168) is a novel benchmark designed to evaluate multimodal audio understanding models on tasks requiring expert-level knowledge and complex reasoning. This adapter converts each dataset record into a Harbor task. Since the MMAU-test dataset does not provide ground-truth answers, we instead use MMAU-test-mini with Qwen-generated audio transcripts, supplied through `--dataset-path`.
 
 ## What is MMAU Bench?
 
@@ -41,7 +41,6 @@ harbor/adapters/mmau/
 ├── README.md
 ├── pyproject.toml
 ├── uv.lock
-├── mmau-test-mini-transcribe-qwen.json
 ├── src/mmau/
 │   ├── adapter.py
 │   ├── main.py
@@ -98,15 +97,34 @@ Artifacts land in `jobs/` (changeable via `jobs_dir` in the config).
 
 ## Usage: Create Task Directories
 
-```bash
-# From adapter directory
-cd adapters/mmau
+From the Marin repository root, cache the pinned input and generate tasks:
 
-# Generate the dataset
-uv run mmau --output-dir ../../datasets/mmau
+```bash
+uv run python -m experiments.evaluation.generate_mmau \
+  --artifact-root /path/to/artifact-cache -- \
+  --output-dir /path/to/datasets/mmau --limit 1
+```
+
+`--artifact-root` accepts a local directory or a regional object-store prefix.
+Omit `--limit 1` to generate all 1,000 tasks. The wrapper verifies the input
+checksum and runs the adapter in its isolated environment.
+
+To use an existing local input directly, run from the repository root:
+
+```bash
+uv run --isolated --project vendor/harbor --frozen --extra runtime \
+  --no-default-groups python vendor/harbor/adapters/mmau/src/mmau/main.py \
+  --dataset-path /path/to/cache/mmau-test-mini-transcribe-qwen.json \
+  --output-dir datasets/mmau
 ```
 
 Generated tasks appear under `datasets/mmau/{id}/`.
+
+The input JSON is cached outside the source tree. The canonical 1,000-record
+transcription file has SHA-256
+`2058e6ca2ebad0f669f5478bfca02b2476b17786fb6ca1906e4c56599ffec425`.
+The adapter also accepts alternate JSON inputs with the same record fields;
+the download workflow verifies the canonical file's checksum.
 
 ## Comparison with Original Benchmark (Parity)
 

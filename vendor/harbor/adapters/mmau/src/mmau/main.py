@@ -11,9 +11,9 @@ from typing import Iterable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from mmau.adapter import MMAUAdapter
+    from mmau.adapter import MMAUAdapter, MMAUDataset
 else:
-    from .adapter import MMAUAdapter
+    from .adapter import MMAUAdapter, MMAUDataset
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +37,12 @@ def _unique(sequence: Iterable[str]) -> list[str]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert MMAU problems into Harbor task directories."
+    )
+    parser.add_argument(
+        "--dataset-path",
+        type=Path,
+        required=True,
+        help="Path to the cached MMAU JSON with audio transcripts.",
     )
     parser.add_argument(
         "--task-ids",
@@ -75,7 +81,8 @@ def main() -> None:
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    adapter = MMAUAdapter(output_dir=output_dir)
+    dataset = MMAUDataset(args.dataset_path.expanduser().resolve())
+    adapter = MMAUAdapter(output_dir=output_dir, dataset=dataset)
 
     requested_ids: list[str] = []
     if args.task_ids:
