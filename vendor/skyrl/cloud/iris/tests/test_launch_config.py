@@ -135,6 +135,17 @@ def _raw_config() -> dict[str, Any]:
     }
 
 
+def test_smoke_launch_accepts_explicit_rank_partitioned_ports(tmp_path):
+    raw = _raw_config()
+    raw["ray"]["port_allocation"] = "rank_partitioned_smoke"
+    path = tmp_path / "smoke.yaml"
+    path.write_text(yaml.safe_dump(raw))
+
+    config = load_launch_config(path)
+    assert config.ray.port_allocation == "rank_partitioned_smoke"
+    assert validate_launch_config(config).num_nodes == 1
+
+
 def test_launch_preserves_harbor_dataset_relative_paths(tmp_path):
     raw = _raw_config()
     task = {

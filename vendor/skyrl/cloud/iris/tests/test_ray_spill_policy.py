@@ -12,7 +12,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from cloud.iris import task_runtime as runtime  # noqa: E402
-from cloud.iris.ray_ports import RayPort, allocated_ray_port, resolve_ray_ports  # noqa: E402
+from cloud.iris.ray_ports import RayPort, RayPortAllocation, allocated_ray_port, resolve_ray_ports  # noqa: E402
 from cloud.iris.ray_storage import (  # noqa: E402
     DEFAULT_RAY_SPILL_DIR,
     LocalRaySpillTarget,
@@ -66,6 +66,28 @@ def test_concurrent_ray_heads_use_disjoint_ports(tmp_path, monkeypatch, first_po
             assert set(ports.values()) == set(allocated.values())
             endpoints.append(set(ports.values()))
     assert endpoints[0].isdisjoint(endpoints[1])
+
+
+def test_same_host_smoke_ranks_get_disjoint_ray_ports_without_reservations(monkeypatch):
+    endpoints = []
+    for rank in (0, 1):
+        monkeypatch.setenv("IRIS_TASK_ID", f"/zack/pi-dagger-test/{rank}")
+        monkeypatch.setenv("IRIS_NUM_TASKS", "2")
+        for port in RayPort:
+            monkeypatch.setenv(f"IRIS_PORT_{port.value.upper()}", "0")
+        resolve_ray_ports(RayPortAllocation.RANK_PARTITIONED_SMOKE)
+        endpoints.append({allocated_ray_port(port) for port in RayPort})
+    assert len(endpoints[0]) == len(endpoints[1]) == len(RayPort)
+    assert endpoints[0].isdisjoint(endpoints[1])
+    assert all(20_000 <= port < 32_000 for ports in endpoints for port in ports)
+
+
+def test_smoke_port_allocation_preserves_controller_reservations(monkeypatch):
+    assigned = {port: 20_900 + index for index, port in enumerate(RayPort)}
+    for port, value in assigned.items():
+        monkeypatch.setenv(f"IRIS_PORT_{port.value.upper()}", str(value))
+    resolve_ray_ports(RayPortAllocation.RANK_PARTITIONED_SMOKE)
+    assert {port: allocated_ray_port(port) for port in RayPort} == assigned
 
 
 def test_remote_spilling_requires_explicit_opt_in():

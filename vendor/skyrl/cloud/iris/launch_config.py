@@ -15,6 +15,7 @@ from skyrl_train.config.mismatch_probe import validate_mismatch_probe_config
 from skyrl_train.config.callbacks import validate_hf_export_config
 from skyrl_train.config.objective_spec import validate_objective
 
+from cloud.iris.ray_ports import RayPortAllocation
 from cloud.iris.ray_storage import RaySpillBackend, resolve_ray_spill_target
 from cloud.iris.role_plan import derive_num_nodes, derive_policy_export_role_plan, derive_role_plan
 from cloud.iris.rl_config_translation import (
@@ -123,6 +124,7 @@ class IrisConfig:
 class RayConfig:
     """Ray bootstrap settings shared by every task replica."""
 
+    port_allocation: str = RayPortAllocation.IRIS.value
     spill_backend: str = RaySpillBackend.LOCAL.value
     spill_dir: str = MISSING
     rendezvous_dir: str = MISSING
@@ -320,6 +322,7 @@ def validate_launch_config(config: DictConfig) -> LaunchTopology:
         ):
             raise ValueError("Remote Pi tasks must be listed in inputs.train_data for node-local extraction")
     ray = raw["ray"]
+    RayPortAllocation(ray["port_allocation"])
     if (
         ray["rendezvous_timeout"] <= 0
         or ray["cluster_join_timeout"] <= 0

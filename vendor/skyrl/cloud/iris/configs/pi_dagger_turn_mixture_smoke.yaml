@@ -1,10 +1,11 @@
 # One-update Pi turn-mixture DAgger gate: 1 H100 policy + separate 1 H100 teacher.
-# DO NOT RELAUNCH this managed-teacher topology on cw-us-east-02a as-is: two
-# one-GPU host-networked Ray tasks can share an eight-GPU node. Kubernetes Ray
-# port placeholders are resolved independently per task, not reserved across
-# tasks: the 2026-11-01 retry collided on port 39535. Fix the allocator or
-# guarantee separate hosts; one Ray task plus an external teacher also avoids
-# this cross-task collision. The first attempt's failure remains unisolated.
+# DO NOT RELAUNCH this managed-teacher topology with the default Iris port
+# allocation on cw-us-east-02a: two one-GPU Ray tasks can share a host and
+# independently choose the same port (observed on the 2026-11-01 retry).
+# Until the Iris controller hostPort fix is deployed, set
+# ray.port_allocation: rank_partitioned_smoke in the outer Iris launch YAML.
+# This bounds the intra-gang port collision; it does not reserve ports against
+# other jobs and does not explain the first attempt's runtime-agent failure.
 # Supply four independently staged task rows and fresh in-region output paths.
 entrypoint: standard
 config_groups:
