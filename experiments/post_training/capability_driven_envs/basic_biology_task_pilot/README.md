@@ -1,0 +1,250 @@
+# Basic biology: paired GLM question-first/answer-first pilot
+
+**Status: experimental training candidates, not a validated exam or eval set.**
+Frozen source: private government HTML archive `raw-html-v1-20261108` from
+[the source inventory PR](https://github.com/marin-community/marin/pull/11106).
+`prepare.py` checks its manifest SHA-256
+`9f880299f679ec033b6dd68b422266b7f04a9ecc9ca38ef748b8e6f855b784cd`,
+extracts text-only article bodies from MedlinePlus Genetics and NHGRI, omits
+media, navigation, references, and images, then splits at paragraph boundaries.
+It rejects extracted page-level copyright markers; NHGRI's public-domain-
+unless-marked policy still requires spot checks before training. The resulting
+**195 passages from 126 articles** have JSONL SHA-256
+`b492e8e93a913e383245c8d290ba90c5abaaa7f4931522e2c9e07fae7ebc7d5d`.
+Neither the raw HTML nor generated output goes in git.
+
+Two generation arms use the **same passages** and GLM-5.3 bulk endpoint:
+
+1. **Question-first:** ask for one self-contained, source-grounded, four-option
+   MCQ or an explicit no-task decision. Bonito's text-conditional task
+   generation motivates the shape, but this is a *prompted GLM adaptation*,
+   **not** a Bonito reproduction.
+2. **Answer-first:** choose a verbatim short answer and supporting quotation
+   from the passage, then condition a second call on that answer to write a
+   four-option MCQ. This adapts the answer-first/round-trip synthetic-QA
+   approach of Alberti et al. (2019); it is not a reproduction of their model.
+
+A separate, blinded GLM call sees passage, question, and options but **not the
+proposed key**; it chooses its own answer and checks source support, multiple
+defensible choices, and missing assumptions. Mechanical checks enforce exact
+source quotes, four distinct options, and the answer-first anchor. All provider
+outputs are private, retained per call, and resumable. Screening agreement is
+**not independent biological validation**, especially with the same model in
+both roles. OpenRouter is a later, separately frozen validation wave, not a
+silent replacement for missing GLM responses.
+
+Input/artifact locations (CoreWeave S3, co-located with GLM relay):
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/source-corpora/us-gov-biology/raw-html-v1-20261108/
+s3://marin-us-east-02a/marin4sc/taskforge/source-corpora/us-gov-biology/passages-v1/passages.jsonl
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v1/smoke-1/
+```
+
+The smoke used `--indices 0,1,122,123` to cover both source families.
+Iris job `/zack/basic-biology-dual-glm-smoke-v1a` succeeded on 2026-11-09
+in 4m44s (20 GLM calls for four passages). All eight generation proposals
+were structurally complete; the blind GLM review screened six and quarantined
+two (one reviewer used straight rather than typographic apostrophes in its
+source quote; another identified two unstated assumptions). Two of the eight
+items concern DNA sequencing technology, which is likely too specialized for
+a core Bio 101 bank even though its sources are official. **None is certified
+biologically correct.** The first attempted federated root job was rejected
+before execution because the launcher omitted CoreWeave object-storage keys;
+job `v1a` supplied them and ran successfully. Raw proposals, reviewers,
+completion metadata, and per-call stage records remain private in `smoke-1/`.
+
+Version 2 adds *only* a typography/whitespace-normalized exact evidence-quote
+check and a separate GLM introductory-biology-fit review. The frozen v1
+responses and statuses remain untouched. `--reuse-prefix .../smoke-1` reads
+all completed generation/review calls from v1 and issues only the new fit calls
+on the four smoke passages. For the full wave `--shard-index N --shard-count 8`
+assigns each passage to exactly one root job; `--output .../full-v2` is a
+separate immutable result root. Every passage is attempted **once per arm**,
+so 195 passages can yield at most 390 candidate MCQs before screening and
+no-task decisions. The full wave needs at most ~1,365 calls including the new
+fit review (fewer for rejected/no-task items), minus reused smoke calls; no
+completed call is repeated on a resume. Full-wave aggregates must be checked
+for source-family and arm yield, concept duplicates, and answer-key imbalance.
+
+## First full scale-up (GLM v2, 2026-11-09)
+
+Eight separate Iris CoreWeave root jobs `/zack/basic-biology-dual-glm-full-v2-s0`
+through `-s7` finished successfully. Each interleaved shard owns one eighth
+of the 195 frozen passages; the four v1 smoke passages reused all 20 original
+generation/review calls, and the v2 smoke fit calls were also reused. Across
+all three disjoint result roots, **1,240 distinct GLM calls** were recorded;
+there were no repeated completed calls. Finalized private snapshot:
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v2/snapshots/complete-1/
+```
+
+`aggregate.json` SHA-256:
+`cc5b9007e6045d672037cac2cedd52db48c0616688e705114f64bdedc66379ef`.
+Private screened-candidate JSONL SHA-256:
+`f093d21c0c4d62af8f001ae9bbb786664ec5deca2e2aeda04743e210b482f2bd`.
+The finalizer freezes the manifest last and verifies a summary for each of
+195 distinct passages, both assigned arms, and every screened proposal.
+
+| Arm | Screened | Quarantined |
+| --- | ---: | ---: |
+| Question-first | 81 | 114 |
+| Answer-first | 103 | 92 |
+| **Total** | **184** | **206** |
+
+Per-passage *screened* yield: **75 with zero, 56 with one, 64 with two**.
+The main quarantine reason was outside-intro-biology (128 item-arm records),
+followed by unstated assumptions (39) and source-quote mismatch (15). These
+categories can co-occur. MedlinePlus contributed 118 of 244 screened arm
+attempts (50 question-first, 68 answer-first); NHGRI 66 of 146 (31 and 35).
+Question-first/answer-first differences are descriptive, not causal: they
+also differ in generation-call count and anchoring constraints.
+
+**Critical pre-training findings:** Generated correct-option positions are
+strongly biased: among the 184 screened items positions 0/1/2/3 occur
+**84/76/22/2** times. Any future training projection must shuffle options
+and remap the key using a frozen deterministic rule. A spot-check also found
+some *accepted* questions about cloning-history trivia, medical genomics,
+intelligence tests and sequencing technology: the GLM Bio-101-fit screen is
+not a reliable final content gate. These 184 are **only provisional screened
+candidates**, not verified scientific references, accepted RL tasks, or a
+benchmark. No OpenRouter calls or held-out eval comparisons have been made.
+Missing/infrastructure/error states are not scored as zero or imputed. For an
+Iris root job, use an authenticated CoreWeave launch and supply `GLM_BULK_TOKEN`
+via Iris env/secret injection, not source files. All generated items are for
+*training*, segregated from BioTasks and other held-out evaluation sets.
+
+## Adaptive novelty pilot (v3; in progress)
+
+`adaptive.py` tests whether passage-level yield can improve without setting a
+fixed number of accepted tasks. For each passage, interleave the two arms for
+**at most 20 total attempts** (up to 10 per arm), stopping an arm early after
+three consecutive *screened* semantic collisions with previously distinct
+screened questions from **either** arm. A failed generation, screening
+quarantine, or repeated answer anchor neither increments nor resets the
+collision streak. A fresh screened learning objective resets it. A GLM judge
+compares question, answer, and evidence against all previous distinct screened
+objectives from the same passage, including reversed/paraphrased questions;
+this is **a model-based novelty heuristic, not a validated semantic metric or
+scientific certification**. A hard cap limits false-negative collisions and
+obscure trivia; low collision frequency does not prove that the source is
+exhausted. Across passages, duplicate concepts still require a separate audit.
+
+The first pair of attempts reuses *existing* v2 generation/review/fit calls
+(the corresponding v1 and v2 smoke calls where applicable), never mutating
+those records. Later prompts explicitly list previously covered objectives.
+Every stage and collision decision is persisted independently, under a
+**new v3 prefix**. If provider calls fail, the passage remains incomplete;
+relaunching reads the completed stage records and rejects changed prompts.
+No model-screened item is automatically promoted into training or held-out
+evaluation, and the v2 snapshot remains frozen.
+
+Frozen ten-passage pilot offsets:
+`86,63,46,51,120,150,169,136,189,131`. They cover five passages from each
+source family and, within each family, two passages with zero, one with one,
+and two with two v2 screened candidates. Passage lengths span roughly
+1,100–3,100 characters. A pilot can have at most 200 attempts (plus reviews);
+**do not launch all 195 passages before inspecting novelty judgments, question
+quality, source rights and per-attempt yield**. Option-key bias from v2 still
+requires a deterministic shuffle/key remap before any training export.
+
+### Pilot outcome (2026-11-09)
+
+The probe `/zack/basic-biology-adaptive-glm-v1-probe` and four root jobs
+`/zack/basic-biology-adaptive-glm-v1-s0` through `-s3` succeeded. The ten
+passages exhausted **all 200 allowed attempts**: 51 were labeled distinct
+screened candidates by GLM (33 question-first, 18 answer-first), 9 were labeled
+semantic collisions (3 and 6), and 140 were quarantined on quality grounds
+(64 and 76). The new v3 prefix contains **544 new provider-call records**;
+first-attempt generation/review/fit stages were reused from the frozen v2 run.
+Preliminary distinct counts per passage, in the frozen offset order above,
+were **0, 7, 8, 3, 6, 4, 0, 5, 6, 12**. Attempts 1–5 per arm yielded 38
+model-labeled distinct questions; attempts 6–10 yielded 13 more. These
+passages were deliberately selected across v2 yield categories, so these
+figures do not estimate corpus-wide yield or comparative arm quality.
+
+**Neither arm ever reached three consecutive screened collisions.** The
+collision-triggered early stop did not save calls on this sample, particularly
+when specialist passages repeatedly failed screening instead of producing
+collisions. A manual spot-check found both an arguably overbroad collision
+judgment (distinct genetics concepts treated as equivalent) and an apparently
+inconsistent novelty judgment about very similar penetrance questions. GLM's
+novelty labels are not reliable enough to count the 51 as truly unique. Some
+GLM-screened survivors also test specialist research/clinical trivia rather
+than Bio 101 concepts. Their correct-option positions are **34/13/4/0**.
+At this checkpoint the full-corpus wave was held for review; it was later
+explicitly authorized under the same frozen screening protocol (below). The
+poor-collision and low-quality-passage failure modes remain unresolved.
+
+Frozen *private* audit snapshot (manifest written last):
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/snapshots/adaptive-pilot-1/
+```
+
+`aggregate.json` SHA-256:
+`2981016eb779b2f0397c866362f641398db73b8c69b2edf44fb5d016b1ccb7b7`.
+Private screened-novel JSONL SHA-256:
+`3647127827f164d67eee571c0cbff2a084b7b1098a8a58d20d972d7c97fe78ea`.
+`finalize_adaptive.py` validates the attempt ledger, novelty history, stop
+reasons, and every screened proposal against the frozen source and records.
+
+### Full adaptive wave (2026-11-09)
+
+The user authorized all **195 frozen passages**, retaining the same
+20-attempt ceiling and three-consecutive-screened-collisions stop. Eight
+interleaved CoreWeave root jobs `/zack/basic-biology-adaptive-glm-full-v1-s0`
+through `-s7` ran. Seven initial shard jobs stopped because GLM returned collision
+IDs that did not exist in the supplied candidate list. Those responses were
+persisted. Commit `f0a42dcb4` changes only the handling of these invalid
+novelty reviews: quarantine the attempt as `invalid_collision_review`, without
+claiming distinctness or repeating the completed provider call. Each failed
+shard resumed as `-r1`; all eight final shard jobs succeeded. The 10 completed
+pilot passages were **referenced, not regenerated**: the new full-wave prefix
+contains exactly 185 distinct passage directories and 10,450 new provider-call
+records, plus the earlier 544 pilot call records in the frozen pilot prefix.
+
+The finalizer checked the complete attempt history for all 195 passages:
+**3,818 attempted arms** out of a possible 3,900. Its GLM-based screening
+assigned:
+
+| Arm | Screened as novel | Screened as collision | Quarantined |
+| --- | ---: | ---: | ---: |
+| Question-first | 456 | 94 | 1,375 |
+| Answer-first | 384 | 154 | 1,355 |
+| **Total** | **840** | **248** | **2,730** |
+
+**150 passages** have at least one GLM-labeled distinct screened item; 45
+have zero. Yield per passage: mean **4.31**, median **4**, range **0–19**.
+By bucket: 45 passages yielded zero; 35 yielded one or two; 54 yielded three
+to five; 36 yielded six to nine; 25 yielded ten or more. MedlinePlus
+contributed 515 model-labeled distinct candidates; NHGRI 325. Both arms
+reached the collision threshold on only **33 of 390 possible arm-passage
+pairs** (12 question-first, 21 answer-first). Attempts 1–5 per arm account
+for 559 novelty labels, and attempts 6–10 for 281. The most frequent
+quarantine reasons are `outside_intro_biology` (1,563 item-arm records),
+`unstated_assumptions` (492), and `unproven_anchor` (267). Issue categories
+can overlap. Fifteen invalid novelty-review references were quarantined.
+
+**These are 840 model-screened *leads*, not a bank of 840 validated unique
+biology items.** Collision judgments, curricular fit, distractor quality,
+question correctness, and page-level rights still need independent review.
+The answer-key bias persists and is worse than the small pilot: correct-option
+positions 0/1/2/3 appear **503/267/66/4** times. Do not train on the raw
+proposals, publish them, or mix them into held-out BioTasks. A later,
+separately frozen validation wave and deterministic option shuffle/key remap
+would be needed before any training projection.
+
+Frozen private snapshot (manifest written last, remote hashes verified):
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/snapshots/full-1/
+```
+
+`aggregate.json` SHA-256:
+`370fd7ce975cbae2580fb91603214e0d4e4ac253cc2d09900da589c646db0e5f`.
+Private `screened-novel.jsonl` SHA-256:
+`f748948a6bfb715e3caaf83164f84e2a3318de093c85350482982b12549c5501`.
+The aggregate retains a SHA-256 for every passage and attempt summary, and
+links all ten prior pilot passages without copying their private items.
