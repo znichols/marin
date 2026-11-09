@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import json
 import os
+import unicodedata
 from dataclasses import asdict
 from typing import Literal
 
@@ -22,7 +23,7 @@ from taskforge_adapters.glm_client import GlmClient
 from experiments.post_training.glm import GLM_BULK_TOKEN_ENV, GLM_MODEL
 
 SOURCE_MANIFEST_SHA256 = "b492e8e93a913e383245c8d290ba90c5abaaa7f4931522e2c9e07fae7ebc7d5d"
-REVISION = "gov-bio-dual-mcq-glm-v1"
+REVISION = "gov-bio-dual-mcq-glm-v2"
 GENERATION = LLMPolicy(max_tokens=2400, reasoning_effort=ReasoningEffort.LOW, temperature=0.3, top_p=0.95)
 REVIEW = LLMPolicy(max_tokens=1800, reasoning_effort=ReasoningEffort.LOW, temperature=0, top_p=1)
 
@@ -62,6 +63,13 @@ class BlindReview(BaseModel):
     unsupported_assumptions: list[str]
     evidence_quote: str
     explanation: str
+
+
+class IntroFit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fits_intro_biology: bool
+    rationale: str
 
 
 def prompt_for_question_first(passage: str) -> str:
@@ -115,6 +123,30 @@ def prompt_for_review(passage: str, item: MCQ) -> str:
     )
 
 
+def _quote_matches(passage: str, quote: str) -> bool:
+    """Match verbatim evidence except typographic punctuation and whitespace."""
+    punctuation = str.maketrans(
+        {"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-", "\u2014": "-"}
+    )
+
+    def normalize(text: str) -> str:
+        return " ".join(unicodedata.normalize("NFKC", text).translate(punctuation).split())
+
+    return normalize(quote) in normalize(passage)
+
+
+def prompt_for_intro_fit(item: MCQ) -> str:
+    """Filter specialist biomedical and technical items without a hand-built taxonomy."""
+    return (
+        "Is this question appropriate for a general introductory biology (Bio 101) course? "
+        "Accept core ideas in cells, molecular biology, heredity, evolution, organisms, and ecology. "
+        "Reject niche clinical diagnostics, specialized laboratory technologies, research trivia, "
+        "and source-specific names. "
+        "Judge only curricular fit, not whether the proposed answer is correct. Give a brief rationale.\n\n"
+        f"QUESTION: {item.question}\nOPTIONS:\n" + "\n".join(f"{i}: {option}" for i, option in enumerate(item.options))
+    )
+
+
 def candidate_issues(passage: str, proposal: Proposal, *, anchor: str | None = None) -> list[str]:
     """Check machine-verifiable shape and direct provenance only."""
     if proposal.disposition == "no_task":
@@ -125,7 +157,7 @@ def candidate_issues(passage: str, proposal: Proposal, *, anchor: str | None = N
     issues: list[str] = []
     if len({s.strip().casefold() for s in item.options}) != 4:
         issues.append("duplicate_options")
-    if item.evidence_quote not in passage:
+    if not _quote_matches(passage, item.evidence_quote):
         issues.append("quote_not_in_passage")
     if anchor is not None and item.options[item.correct_index] != anchor:
         issues.append("wrong_anchor")
@@ -142,7 +174,7 @@ def review_issues(passage: str, proposal: Proposal, review: BlindReview) -> list
     issues = candidate_issues(passage, proposal)
     if review.selected_index != item.correct_index:
         issues.append("blind_solver_disagrees")
-    if not review.supported_by_passage or review.evidence_quote not in passage:
+    if not review.supported_by_passage or not _quote_matches(passage, review.evidence_quote):
         issues.append("review_evidence_missing")
     if review.other_defensible_indices:
         issues.append("multiple_defensible_answers")
@@ -172,6 +204,13 @@ def load(uri: str) -> dict[str, object] | None:
         return json.load(file)
 
 
+def _stage_uri(root: str, prior_root: str | None, name: str) -> str:
+    """Reuse a previously completed call without reissuing it or altering its bytes."""
+    if prior_root is not None and load(prior_root + name + ".json") is not None:
+        return prior_root + name + ".json"
+    return root + name + ".json"
+
+
 async def call_or_load(
     model: GlmClient, prompt: str, schema: type[BaseModel], policy: LLMPolicy, uri: str
 ) -> dict[str, object]:
@@ -192,21 +231,30 @@ async def call_or_load(
     return record
 
 
-async def run_one(row: dict[str, object], port: OpenAIModelPort, destination: str) -> dict[str, object]:
+async def run_one(
+    row: dict[str, object], port: OpenAIModelPort, destination: str, *, prior_destination: str | None = None
+) -> dict[str, object]:
     """Run both paired arms, saving all generation and review calls independently."""
     text = str(row["text"])
     if hashlib.sha256(text.encode()).hexdigest() != row["passage_sha256"]:
         raise ValueError("Passage digest mismatch")
     root = destination.rstrip("/") + "/" + str(row["id"]) + "/"
+    prior_root = prior_destination.rstrip("/") + "/" + str(row["id"]) + "/" if prior_destination else None
     token = os.environ[port.api_key_env]
     async with GlmClient(endpoint_source(port, token), provider_config(port)) as model:
         q = Proposal.model_validate(
-            (await call_or_load(model, prompt_for_question_first(text), Proposal, GENERATION, root + "qfirst.json"))[
-                "value"
-            ]
+            (
+                await call_or_load(
+                    model, prompt_for_question_first(text), Proposal, GENERATION, _stage_uri(root, prior_root, "qfirst")
+                )
+            )["value"]
         )
         a = AnswerAnchor.model_validate(
-            (await call_or_load(model, prompt_for_anchor(text), AnswerAnchor, GENERATION, root + "anchor.json"))["value"]
+            (
+                await call_or_load(
+                    model, prompt_for_anchor(text), AnswerAnchor, GENERATION, _stage_uri(root, prior_root, "anchor")
+                )
+            )["value"]
         )
         anchor_issues: list[str] = []
         if a.disposition == "candidate":
@@ -224,7 +272,7 @@ async def run_one(row: dict[str, object], port: OpenAIModelPort, destination: st
                         prompt_for_answer_first(text, a.answer, a.evidence_quote),
                         Proposal,
                         GENERATION,
-                        root + "afirst.json",
+                        _stage_uri(root, prior_root, "afirst"),
                     )
                 )["value"]
             )
@@ -243,11 +291,21 @@ async def run_one(row: dict[str, object], port: OpenAIModelPort, destination: st
                             prompt_for_review(text, proposal.item),
                             BlindReview,
                             REVIEW,
-                            root + name + "-review.json",
+                            _stage_uri(root, prior_root, name + "-review"),
                         )
                     )["value"]
                 )
                 issues = review_issues(text, proposal, review)
+            if proposal is not None and not issues and proposal.item is not None:
+                fit = IntroFit.model_validate(
+                    (
+                        await call_or_load(
+                            model, prompt_for_intro_fit(proposal.item), IntroFit, REVIEW, root + name + "-fit.json"
+                        )
+                    )["value"]
+                )
+                if not fit.fits_intro_biology:
+                    issues.append("outside_intro_biology")
             outcomes[name] = {"status": "screened_candidate" if not issues else "quarantined", "issues": issues}
         result: dict[str, object] = {
             "id": row["id"],
@@ -275,6 +333,9 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=4)
     parser.add_argument("--indices", help="Comma-separated frozen passage offsets for a stratified smoke run")
+    parser.add_argument("--shard-index", type=int)
+    parser.add_argument("--shard-count", type=int)
+    parser.add_argument("--reuse-prefix", help="Read completed v1 calls in place without repeating them")
     parser.add_argument("--base-url")
     parser.add_argument("--relay-job", default="/muchanem/glm53-relay-tok-02a")
     parser.add_argument("--relay-service", default="glm-5.3-tok")
@@ -289,12 +350,19 @@ def main() -> None:
         relay_service=None if args.base_url else args.relay_service,
     )
     full_rows = read_rows(args.input)
-    indices = [int(value) for value in args.indices.split(",")] if args.indices else list(range(args.limit))
+    if args.indices and args.shard_count is not None:
+        raise ValueError("Specify either --indices or shard placement")
+    if args.shard_count is not None:
+        if args.shard_count < 1 or args.shard_index is None or not 0 <= args.shard_index < args.shard_count:
+            raise ValueError("Invalid shard index/count")
+        indices = [i for i in range(len(full_rows)) if i % args.shard_count == args.shard_index]
+    else:
+        indices = [int(value) for value in args.indices.split(",")] if args.indices else list(range(args.limit))
     if len(indices) != len(set(indices)) or any(index < 0 or index >= len(full_rows) for index in indices):
         raise ValueError("Passage offsets must be distinct and in range")
     rows = [full_rows[index] for index in indices]
     for index, row in enumerate(rows, 1):
-        result = asyncio.run(run_one(row, port, args.output))
+        result = asyncio.run(run_one(row, port, args.output, prior_destination=args.reuse_prefix))
         print(f"{index}/{len(rows)} {result['id']} {result['outcomes']}", flush=True)
 
 

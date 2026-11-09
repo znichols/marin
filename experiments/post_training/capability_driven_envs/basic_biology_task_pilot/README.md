@@ -54,11 +54,18 @@ before execution because the launcher omitted CoreWeave object-storage keys;
 job `v1a` supplied them and ran successfully. Raw proposals, reviewers,
 completion metadata, and per-call stage records remain private in `smoke-1/`.
 
-Do not run the full 195-passage wave until source-grade difficulty filtering,
-typographic-only evidence normalization, and projected
-provider volume are examined. A completed full wave needs up to ~975 calls
-(two generation arms, an extra answer-anchor call, two blinded reviews per
-passage); no call is repeated on a resume. Missing/infrastructure/error states
+Version 2 adds *only* a typography/whitespace-normalized exact evidence-quote
+check and a separate GLM introductory-biology-fit review. The frozen v1
+responses and statuses remain untouched. `--reuse-prefix .../smoke-1` reads
+all completed generation/review calls from v1 and issues only the new fit calls
+on the four smoke passages. For the full wave `--shard-index N --shard-count 8`
+assigns each passage to exactly one root job; `--output .../full-v2` is a
+separate immutable result root. Every passage is attempted **once per arm**,
+so 195 passages can yield at most 390 candidate MCQs before screening and
+no-task decisions. The full wave needs at most ~1,365 calls including the new
+fit review (fewer for rejected/no-task items), minus reused smoke calls; no
+completed call is repeated on a resume. Full-wave aggregates must be checked
+for source-family and arm yield, concept duplicates, and answer-key imbalance. Missing/infrastructure/error states
 are not scored as zero or imputed. For an Iris root job, use an authenticated
 CoreWeave launch and supply `GLM_BULK_TOKEN` via Iris env/secret injection, not
 source files. All generated items are for *training*, segregated from BioTasks

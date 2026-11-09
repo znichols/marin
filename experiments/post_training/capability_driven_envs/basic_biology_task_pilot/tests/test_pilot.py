@@ -1,13 +1,17 @@
 """Independent MCQ screening and provenance guards."""
 
+from pathlib import Path
+
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.prepare import extract_body
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.run_glm import (
     MCQ,
     BlindReview,
     Proposal,
+    _stage_uri,
     candidate_issues,
     prompt_for_review,
     review_issues,
+    write_once,
 )
 
 
@@ -32,6 +36,15 @@ def test_blinded_review_hides_reference_key_and_quote() -> None:
     assert "best 0-based selected_index" in prompt
 
 
+def test_version_two_reuses_completed_calls_without_mutating_old_records(tmp_path: Path) -> None:
+    (tmp_path / "smoke").mkdir()
+    prior = str(tmp_path / "smoke") + "/"
+    current = str(tmp_path / "full") + "/"
+    write_once(prior + "qfirst.json", {"value": "frozen"})
+    assert _stage_uri(current, prior, "qfirst") == prior + "qfirst.json"
+    assert _stage_uri(current, prior, "afirst") == current + "afirst.json"
+
+
 def test_candidate_and_review_disagree_or_detect_ambiguity() -> None:
     text = "Adenine (A) pairs with thymine (T)."
     proposal = Proposal(
@@ -54,3 +67,11 @@ def test_candidate_and_review_disagree_or_detect_ambiguity() -> None:
         explanation="An alternative was claimed defensible.",
     )
     assert review_issues(text, proposal, review) == ["multiple_defensible_answers"]
+    punctuation = "The cell\u2019s nucleus contains DNA."
+    assert (
+        candidate_issues(
+            punctuation,
+            proposal.model_copy(update={"item": proposal.item.model_copy(update={"evidence_quote": "cell's nucleus"})}),
+        )
+        == []
+    )
