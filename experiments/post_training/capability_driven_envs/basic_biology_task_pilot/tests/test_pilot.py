@@ -11,9 +11,11 @@ import pytest
 from taskforge_adapters.campaign import OpenAIModelPort
 
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.adaptive import (
+    CollisionReview,
     PassageProgress,
     ScreenedItem,
     apply_decision,
+    collision_review_issue,
     first_stage_uri,
     run_passage,
 )
@@ -90,6 +92,24 @@ def test_semantic_collision_stop_ignores_rejections_and_is_per_arm() -> None:
     apply_decision(progress, "afirst", "screened_novel", ScreenedItem("later", item), 3)
     assert progress.arms["afirst"].collision_streak == 0
     assert len(progress.novel) == 2
+
+
+def test_invalid_collision_reference_is_quarantined_without_stopping_arm() -> None:
+    item = MCQ(
+        question="Under normal DNA base pairing, which base pairs with adenine?",
+        options=("thymine", "guanine", "cytosine", "uracil"),
+        correct_index=0,
+        evidence_quote="adenine pairs with thymine",
+    )
+    prior = [ScreenedItem("known-00", item)]
+    invalid = CollisionReview(same_learning_objective=True, matched_id="invented-id", rationale="Same base pairing")
+    assert collision_review_issue(invalid, prior) == "invalid_collision_review"
+    progress = PassageProgress(novel=prior.copy())
+    apply_decision(progress, "qfirst", "quarantined", None, 3)
+    assert progress.arms["qfirst"].collision_streak == 0
+    assert not progress.arms["qfirst"].stopped
+    valid = CollisionReview(same_learning_objective=True, matched_id="known-00", rationale="Same base pairing")
+    assert collision_review_issue(valid, prior) is None
 
 
 def test_first_attempt_prefers_frozen_sources_over_new_calls(tmp_path: Path) -> None:

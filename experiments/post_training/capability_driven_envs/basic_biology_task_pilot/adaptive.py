@@ -118,6 +118,15 @@ def collision_prompt(candidate: MCQ, prior: list[ScreenedItem]) -> str:
     )
 
 
+def collision_review_issue(review: CollisionReview, prior: list[ScreenedItem]) -> str | None:
+    """Quarantine inconsistent or unknown model matches without repeating a completed call."""
+    if review.same_learning_objective != (review.matched_id is not None):
+        return "invalid_collision_review"
+    if review.matched_id is not None and review.matched_id not in {item.id for item in prior}:
+        return "invalid_collision_review"
+    return None
+
+
 def apply_decision(progress: PassageProgress, arm: str, status: str, item: ScreenedItem | None, threshold: int) -> None:
     """Advance one arm; rejected attempts do not reset or increment collision streaks."""
     state = progress.arms[arm]
@@ -230,11 +239,10 @@ async def one_attempt(
                     )
                 )["value"]
             )
-            if judge.same_learning_objective != (judge.matched_id is not None):
-                raise ValueError("Contradictory collision review")
-            if judge.matched_id is not None:
-                if judge.matched_id not in {old.id for old in progress.novel}:
-                    raise ValueError("Collision matched an unknown earlier candidate")
+            if collision_review_issue(judge, progress.novel):
+                issues.append("invalid_collision_review")
+                status = "quarantined"
+            elif judge.matched_id is not None:
                 match = judge.matched_id
                 status = "screened_collision"
     identity = f"{passage_id}-{arm}-{number:02d}"
