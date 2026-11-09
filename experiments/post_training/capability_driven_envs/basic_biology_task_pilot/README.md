@@ -188,3 +188,62 @@ Private screened-novel JSONL SHA-256:
 `3647127827f164d67eee571c0cbff2a084b7b1098a8a58d20d972d7c97fe78ea`.
 `finalize_adaptive.py` validates the attempt ledger, novelty history, stop
 reasons, and every screened proposal against the frozen source and records.
+
+### Full adaptive wave (2026-11-09)
+
+The user authorized all **195 frozen passages**, retaining the same
+20-attempt ceiling and three-consecutive-screened-collisions stop. Eight
+interleaved CoreWeave root jobs `/zack/basic-biology-adaptive-glm-full-v1-s0`
+through `-s7` ran. Seven initial shard jobs stopped because GLM returned collision
+IDs that did not exist in the supplied candidate list. Those responses were
+persisted. Commit `f0a42dcb4` changes only the handling of these invalid
+novelty reviews: quarantine the attempt as `invalid_collision_review`, without
+claiming distinctness or repeating the completed provider call. Each failed
+shard resumed as `-r1`; all eight final shard jobs succeeded. The 10 completed
+pilot passages were **referenced, not regenerated**: the new full-wave prefix
+contains exactly 185 distinct passage directories and 10,450 new provider-call
+records, plus the earlier 544 pilot call records in the frozen pilot prefix.
+
+The finalizer checked the complete attempt history for all 195 passages:
+**3,818 attempted arms** out of a possible 3,900. Its GLM-based screening
+assigned:
+
+| Arm | Screened as novel | Screened as collision | Quarantined |
+| --- | ---: | ---: | ---: |
+| Question-first | 456 | 94 | 1,375 |
+| Answer-first | 384 | 154 | 1,355 |
+| **Total** | **840** | **248** | **2,730** |
+
+**150 passages** have at least one GLM-labeled distinct screened item; 45
+have zero. Yield per passage: mean **4.31**, median **4**, range **0–19**.
+By bucket: 45 passages yielded zero; 35 yielded one or two; 54 yielded three
+to five; 36 yielded six to nine; 25 yielded ten or more. MedlinePlus
+contributed 515 model-labeled distinct candidates; NHGRI 325. Both arms
+reached the collision threshold on only **33 of 390 possible arm-passage
+pairs** (12 question-first, 21 answer-first). Attempts 1–5 per arm account
+for 559 novelty labels, and attempts 6–10 for 281. The most frequent
+quarantine reasons are `outside_intro_biology` (1,563 item-arm records),
+`unstated_assumptions` (492), and `unproven_anchor` (267). Issue categories
+can overlap. Fifteen invalid novelty-review references were quarantined.
+
+**These are 840 model-screened *leads*, not a bank of 840 validated unique
+biology items.** Collision judgments, curricular fit, distractor quality,
+question correctness, and page-level rights still need independent review.
+The answer-key bias persists and is worse than the small pilot: correct-option
+positions 0/1/2/3 appear **503/267/66/4** times. Do not train on the raw
+proposals, publish them, or mix them into held-out BioTasks. A later,
+separately frozen validation wave and deterministic option shuffle/key remap
+would be needed before any training projection.
+
+Frozen private snapshot (manifest written last, remote hashes verified):
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/snapshots/full-1/
+```
+
+`aggregate.json` SHA-256:
+`370fd7ce975cbae2580fb91603214e0d4e4ac253cc2d09900da589c646db0e5f`.
+Private `screened-novel.jsonl` SHA-256:
+`f748948a6bfb715e3caaf83164f84e2a3318de093c85350482982b12549c5501`.
+The aggregate retains a SHA-256 for every passage and attempt summary, and
+links all ten prior pilot passages without copying their private items.
