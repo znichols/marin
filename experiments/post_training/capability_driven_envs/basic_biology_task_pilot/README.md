@@ -173,8 +173,9 @@ inconsistent novelty judgment about very similar penetrance questions. GLM's
 novelty labels are not reliable enough to count the 51 as truly unique. Some
 GLM-screened survivors also test specialist research/clinical trivia rather
 than Bio 101 concepts. Their correct-option positions are **34/13/4/0**.
-Further full-corpus generation is **paused** pending a better novelty/content
-audit and a stopping rule that handles passages yielding no usable questions.
+At this checkpoint the full-corpus wave was held for review; it was later
+explicitly authorized under the same frozen screening protocol (below). The
+poor-collision and low-quality-passage failure modes remain unresolved.
 
 Frozen *private* audit snapshot (manifest written last):
 
