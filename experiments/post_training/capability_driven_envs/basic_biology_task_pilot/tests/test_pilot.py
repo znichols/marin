@@ -4,6 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.adaptive import (
+    PassageProgress,
+    ScreenedItem,
+    apply_decision,
+    first_stage_uri,
+)
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.finalize import read_json, write_new
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.prepare import extract_body
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.run_glm import (
@@ -55,6 +61,40 @@ def test_version_two_reuses_completed_calls_without_mutating_old_records(tmp_pat
     write_once(prior + "qfirst.json", {"value": "frozen"})
     assert _stage_uri(current, prior, "qfirst") == prior + "qfirst.json"
     assert _stage_uri(current, prior, "afirst") == current + "afirst.json"
+
+
+def test_semantic_collision_stop_ignores_rejections_and_is_per_arm() -> None:
+    item = MCQ(
+        question="In DNA, which base pairs with adenine under standard base pairing?",
+        options=("thymine", "uracil", "guanine", "cytosine"),
+        correct_index=0,
+        evidence_quote="A pairs with T",
+    )
+    progress = PassageProgress()
+    apply_decision(progress, "qfirst", "screened_novel", ScreenedItem("initial", item), 3)
+    for status in ("screened_collision", "quarantined", "screened_collision"):
+        apply_decision(progress, "qfirst", status, None, 3)
+    assert not progress.arms["qfirst"].stopped
+    assert progress.arms["qfirst"].collision_streak == 2
+    apply_decision(progress, "qfirst", "screened_collision", None, 3)
+    assert progress.arms["qfirst"].stopped
+    assert not progress.arms["afirst"].stopped
+    assert [candidate.id for candidate in progress.novel] == ["initial"]
+    apply_decision(progress, "afirst", "screened_novel", ScreenedItem("later", item), 3)
+    assert progress.arms["afirst"].collision_streak == 0
+    assert len(progress.novel) == 2
+
+
+def test_first_attempt_prefers_frozen_sources_over_new_calls(tmp_path: Path) -> None:
+    prior = str(tmp_path / "full")
+    smoke = str(tmp_path / "smoke")
+    fit = str(tmp_path / "fit")
+    (tmp_path / "smoke" / "p").mkdir(parents=True)
+    (tmp_path / "fit" / "p").mkdir(parents=True)
+    write_once(smoke + "/p/qfirst.json", {"value": "unchanged"})
+    write_once(fit + "/p/qfirst-fit.json", {"value": "unchanged"})
+    assert first_stage_uri("p", "qfirst", prior, smoke, fit) == smoke + "/p/qfirst.json"
+    assert first_stage_uri("p", "qfirst-fit", prior, smoke, fit) == fit + "/p/qfirst-fit.json"
 
 
 def test_candidate_and_review_disagree_or_detect_ambiguity() -> None:

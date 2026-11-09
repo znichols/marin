@@ -109,8 +109,42 @@ some *accepted* questions about cloning-history trivia, medical genomics,
 intelligence tests and sequencing technology: the GLM Bio-101-fit screen is
 not a reliable final content gate. These 184 are **only provisional screened
 candidates**, not verified scientific references, accepted RL tasks, or a
-benchmark. No OpenRouter calls or held-out eval comparisons have been made. Missing/infrastructure/error states
-are not scored as zero or imputed. For an Iris root job, use an authenticated
-CoreWeave launch and supply `GLM_BULK_TOKEN` via Iris env/secret injection, not
-source files. All generated items are for *training*, segregated from BioTasks
-and other held-out evaluation sets.
+benchmark. No OpenRouter calls or held-out eval comparisons have been made.
+Missing/infrastructure/error states are not scored as zero or imputed. For an
+Iris root job, use an authenticated CoreWeave launch and supply `GLM_BULK_TOKEN`
+via Iris env/secret injection, not source files. All generated items are for
+*training*, segregated from BioTasks and other held-out evaluation sets.
+
+## Adaptive novelty pilot (v3; in progress)
+
+`adaptive.py` tests whether passage-level yield can improve without setting a
+fixed number of accepted tasks. For each passage, interleave the two arms for
+**at most 20 total attempts** (up to 10 per arm), stopping an arm early after
+three consecutive *screened* semantic collisions with previously distinct
+screened questions from **either** arm. A failed generation, screening
+quarantine, or repeated answer anchor neither increments nor resets the
+collision streak. A fresh screened learning objective resets it. A GLM judge
+compares question, answer, and evidence against all previous distinct screened
+objectives from the same passage, including reversed/paraphrased questions;
+this is **a model-based novelty heuristic, not a validated semantic metric or
+scientific certification**. A hard cap limits false-negative collisions and
+obscure trivia; low collision frequency does not prove that the source is
+exhausted. Across passages, duplicate concepts still require a separate audit.
+
+The first pair of attempts reuses *existing* v2 generation/review/fit calls
+(the corresponding v1 and v2 smoke calls where applicable), never mutating
+those records. Later prompts explicitly list previously covered objectives.
+Every stage and collision decision is persisted independently, under a
+**new v3 prefix**. If provider calls fail, the passage remains incomplete;
+relaunching reads the completed stage records and rejects changed prompts.
+No model-screened item is automatically promoted into training or held-out
+evaluation, and the v2 snapshot remains frozen.
+
+Frozen ten-passage pilot offsets:
+`86,63,46,51,120,150,169,136,189,131`. They cover five passages from each
+source family and, within each family, two passages with zero, one with one,
+and two with two v2 screened candidates. Passage lengths span roughly
+1,100–3,100 characters. A pilot can have at most 200 attempts (plus reviews);
+**do not launch all 195 passages before inspecting novelty judgments, question
+quality, source rights and per-attempt yield**. Option-key bias from v2 still
+requires a deterministic shuffle/key remap before any training export.
