@@ -232,7 +232,12 @@ async def call_or_load(
 
 
 async def run_one(
-    row: dict[str, object], port: OpenAIModelPort, destination: str, *, prior_destination: str | None = None
+    row: dict[str, object],
+    port: OpenAIModelPort,
+    destination: str,
+    *,
+    prior_destination: str | None = None,
+    fit_prior_destination: str | None = None,
 ) -> dict[str, object]:
     """Run both paired arms, saving all generation and review calls independently."""
     text = str(row["text"])
@@ -240,6 +245,7 @@ async def run_one(
         raise ValueError("Passage digest mismatch")
     root = destination.rstrip("/") + "/" + str(row["id"]) + "/"
     prior_root = prior_destination.rstrip("/") + "/" + str(row["id"]) + "/" if prior_destination else None
+    fit_prior_root = fit_prior_destination.rstrip("/") + "/" + str(row["id"]) + "/" if fit_prior_destination else None
     token = os.environ[port.api_key_env]
     async with GlmClient(endpoint_source(port, token), provider_config(port)) as model:
         q = Proposal.model_validate(
@@ -300,7 +306,11 @@ async def run_one(
                 fit = IntroFit.model_validate(
                     (
                         await call_or_load(
-                            model, prompt_for_intro_fit(proposal.item), IntroFit, REVIEW, root + name + "-fit.json"
+                            model,
+                            prompt_for_intro_fit(proposal.item),
+                            IntroFit,
+                            REVIEW,
+                            _stage_uri(root, fit_prior_root, name + "-fit"),
                         )
                     )["value"]
                 )
@@ -336,6 +346,7 @@ def main() -> None:
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--shard-count", type=int)
     parser.add_argument("--reuse-prefix", help="Read completed v1 calls in place without repeating them")
+    parser.add_argument("--fit-reuse-prefix", help="Read completed v2 smoke fit reviews without repeating them")
     parser.add_argument("--base-url")
     parser.add_argument("--relay-job", default="/muchanem/glm53-relay-tok-02a")
     parser.add_argument("--relay-service", default="glm-5.3-tok")
@@ -362,7 +373,11 @@ def main() -> None:
         raise ValueError("Passage offsets must be distinct and in range")
     rows = [full_rows[index] for index in indices]
     for index, row in enumerate(rows, 1):
-        result = asyncio.run(run_one(row, port, args.output, prior_destination=args.reuse_prefix))
+        result = asyncio.run(
+            run_one(
+                row, port, args.output, prior_destination=args.reuse_prefix, fit_prior_destination=args.fit_reuse_prefix
+            )
+        )
         print(f"{index}/{len(rows)} {result['id']} {result['outcomes']}", flush=True)
 
 
