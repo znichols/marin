@@ -148,3 +148,43 @@ and two with two v2 screened candidates. Passage lengths span roughly
 **do not launch all 195 passages before inspecting novelty judgments, question
 quality, source rights and per-attempt yield**. Option-key bias from v2 still
 requires a deterministic shuffle/key remap before any training export.
+
+### Pilot outcome (2026-11-09)
+
+The probe `/zack/basic-biology-adaptive-glm-v1-probe` and four root jobs
+`/zack/basic-biology-adaptive-glm-v1-s0` through `-s3` succeeded. The ten
+passages exhausted **all 200 allowed attempts**: 51 were labeled distinct
+screened candidates by GLM (33 question-first, 18 answer-first), 9 were labeled
+semantic collisions (3 and 6), and 140 were quarantined on quality grounds
+(64 and 76). The new v3 prefix contains **544 new provider-call records**;
+first-attempt generation/review/fit stages were reused from the frozen v2 run.
+Preliminary distinct counts per passage, in the frozen offset order above,
+were **0, 7, 8, 3, 6, 4, 0, 5, 6, 12**. Attempts 1–5 per arm yielded 38
+model-labeled distinct questions; attempts 6–10 yielded 13 more. These
+passages were deliberately selected across v2 yield categories, so these
+figures do not estimate corpus-wide yield or comparative arm quality.
+
+**Neither arm ever reached three consecutive screened collisions.** The
+collision-triggered early stop did not save calls on this sample, particularly
+when specialist passages repeatedly failed screening instead of producing
+collisions. A manual spot-check found both an arguably overbroad collision
+judgment (distinct genetics concepts treated as equivalent) and an apparently
+inconsistent novelty judgment about very similar penetrance questions. GLM's
+novelty labels are not reliable enough to count the 51 as truly unique. Some
+GLM-screened survivors also test specialist research/clinical trivia rather
+than Bio 101 concepts. Their correct-option positions are **34/13/4/0**.
+Further full-corpus generation is **paused** pending a better novelty/content
+audit and a stopping rule that handles passages yielding no usable questions.
+
+Frozen *private* audit snapshot (manifest written last):
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/snapshots/adaptive-pilot-1/
+```
+
+`aggregate.json` SHA-256:
+`2981016eb779b2f0397c866362f641398db73b8c69b2edf44fb5d016b1ccb7b7`.
+Private screened-novel JSONL SHA-256:
+`3647127827f164d67eee571c0cbff2a084b7b1098a8a58d20d972d7c97fe78ea`.
+`finalize_adaptive.py` validates the attempt ledger, novelty history, stop
+reasons, and every screened proposal against the frozen source and records.
