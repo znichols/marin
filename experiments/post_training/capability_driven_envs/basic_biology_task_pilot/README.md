@@ -41,8 +41,21 @@ s3://marin-us-east-02a/marin4sc/taskforge/source-corpora/us-gov-biology/passages
 s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v1/smoke-1/
 ```
 
-The smoke should use `--indices 0,1,122,123` to cover both source families.
-Do not run the full 195-passage wave until the smoke output and projected
+The smoke used `--indices 0,1,122,123` to cover both source families.
+Iris job `/zack/basic-biology-dual-glm-smoke-v1a` succeeded on 2026-11-09
+in 4m44s (20 GLM calls for four passages). All eight generation proposals
+were structurally complete; the blind GLM review screened six and quarantined
+two (one reviewer used straight rather than typographic apostrophes in its
+source quote; another identified two unstated assumptions). Two of the eight
+items concern DNA sequencing technology, which is likely too specialized for
+a core Bio 101 bank even though its sources are official. **None is certified
+biologically correct.** The first attempted federated root job was rejected
+before execution because the launcher omitted CoreWeave object-storage keys;
+job `v1a` supplied them and ran successfully. Raw proposals, reviewers,
+completion metadata, and per-call stage records remain private in `smoke-1/`.
+
+Do not run the full 195-passage wave until source-grade difficulty filtering,
+typographic-only evidence normalization, and projected
 provider volume are examined. A completed full wave needs up to ~975 calls
 (two generation arms, an extra answer-anchor call, two blinded reviews per
 passage); no call is repeated on a resume. Missing/infrastructure/error states
