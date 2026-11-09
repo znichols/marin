@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+import pytest
+
+from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.finalize import read_json, write_new
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.prepare import extract_body
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.run_glm import (
     MCQ,
@@ -34,6 +37,15 @@ def test_blinded_review_hides_reference_key_and_quote() -> None:
     assert "correct_index" not in prompt
     assert "A with T" in prompt  # Source visible, generated evidence label not revealed.
     assert "best 0-based selected_index" in prompt
+
+
+def test_final_snapshot_refuses_mutating_existing_artifacts(tmp_path: Path) -> None:
+    uri = str(tmp_path / "aggregate.json")
+    write_new(uri, b'{"ok":true}\n')
+    write_new(uri, b'{"ok":true}\n')
+    assert read_json(uri)[0] == {"ok": True}
+    with pytest.raises(ValueError, match="Frozen output collision"):
+        write_new(uri, b'{"ok":false}\n')
 
 
 def test_version_two_reuses_completed_calls_without_mutating_old_records(tmp_path: Path) -> None:

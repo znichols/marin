@@ -65,7 +65,51 @@ so 195 passages can yield at most 390 candidate MCQs before screening and
 no-task decisions. The full wave needs at most ~1,365 calls including the new
 fit review (fewer for rejected/no-task items), minus reused smoke calls; no
 completed call is repeated on a resume. Full-wave aggregates must be checked
-for source-family and arm yield, concept duplicates, and answer-key imbalance. Missing/infrastructure/error states
+for source-family and arm yield, concept duplicates, and answer-key imbalance.
+
+## First full scale-up (GLM v2, 2026-11-09)
+
+Eight separate Iris CoreWeave root jobs `/zack/basic-biology-dual-glm-full-v2-s0`
+through `-s7` finished successfully. Each interleaved shard owns one eighth
+of the 195 frozen passages; the four v1 smoke passages reused all 20 original
+generation/review calls, and the v2 smoke fit calls were also reused. Across
+all three disjoint result roots, **1,240 distinct GLM calls** were recorded;
+there were no repeated completed calls. Finalized private snapshot:
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v2/snapshots/complete-1/
+```
+
+`aggregate.json` SHA-256:
+`cc5b9007e6045d672037cac2cedd52db48c0616688e705114f64bdedc66379ef`.
+Private screened-candidate JSONL SHA-256:
+`f093d21c0c4d62af8f001ae9bbb786664ec5deca2e2aeda04743e210b482f2bd`.
+The finalizer freezes the manifest last and verifies a summary for each of
+195 distinct passages, both assigned arms, and every screened proposal.
+
+| Arm | Screened | Quarantined |
+| --- | ---: | ---: |
+| Question-first | 81 | 114 |
+| Answer-first | 103 | 92 |
+| **Total** | **184** | **206** |
+
+Per-passage *screened* yield: **75 with zero, 56 with one, 64 with two**.
+The main quarantine reason was outside-intro-biology (128 item-arm records),
+followed by unstated assumptions (39) and source-quote mismatch (15). These
+categories can co-occur. MedlinePlus contributed 118 of 244 screened arm
+attempts (50 question-first, 68 answer-first); NHGRI 66 of 146 (31 and 35).
+Question-first/answer-first differences are descriptive, not causal: they
+also differ in generation-call count and anchoring constraints.
+
+**Critical pre-training findings:** Generated correct-option positions are
+strongly biased: among the 184 screened items positions 0/1/2/3 occur
+**84/76/22/2** times. Any future training projection must shuffle options
+and remap the key using a frozen deterministic rule. A spot-check also found
+some *accepted* questions about cloning-history trivia, medical genomics,
+intelligence tests and sequencing technology: the GLM Bio-101-fit screen is
+not a reliable final content gate. These 184 are **only provisional screened
+candidates**, not verified scientific references, accepted RL tasks, or a
+benchmark. No OpenRouter calls or held-out eval comparisons have been made. Missing/infrastructure/error states
 are not scored as zero or imputed. For an Iris root job, use an authenticated
 CoreWeave launch and supply `GLM_BULK_TOKEN` via Iris env/secret injection, not
 source files. All generated items are for *training*, segregated from BioTasks
