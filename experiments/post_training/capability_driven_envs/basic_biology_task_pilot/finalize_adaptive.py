@@ -1,9 +1,6 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Copyright The Marin Authors
-# SPDX-License-Identifier: Apache-2.0
-
 """Freeze a private, auditable snapshot of the ten-passage adaptive GLM pilot."""
 
 import argparse
@@ -31,9 +28,14 @@ from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.r
 PILOT_INDICES = (86, 63, 46, 51, 120, 150, 169, 136, 189, 131)
 
 
-def snapshot(input_uri: str, result_root: str, output_root: str) -> dict[str, object]:
+def snapshot(
+    input_uri: str, result_root: str, output_root: str, *, all_passages: bool = False, pilot_root: str | None = None
+) -> dict[str, object]:
     """Validate saved stage decisions and freeze summary hashes and screened items."""
     rows = read_rows(input_uri)
+    if all_passages != (pilot_root is not None):
+        raise ValueError("Full-corpus snapshots must supply the completed pilot root")
+    indices = tuple(range(len(rows))) if all_passages else PILOT_INDICES
     root = result_root.rstrip("/") + "/"
     results: list[dict[str, object]] = []
     candidates: list[dict[str, object]] = []
@@ -42,10 +44,10 @@ def snapshot(input_uri: str, result_root: str, output_root: str) -> dict[str, ob
     marginal: Counter[int] = Counter()
     by_source: Counter[str] = Counter()
     stops: Counter[str] = Counter()
-    for index in PILOT_INDICES:
+    for index in indices:
         row = rows[index]
         passage_id = str(row["id"])
-        prefix = root + passage_id + "/"
+        prefix = (pilot_root.rstrip("/") + "/" if pilot_root and index in PILOT_INDICES else root) + passage_id + "/"
         final, final_sha = read_json(prefix + "summary.json")
         if (
             final["id"] != passage_id
@@ -144,7 +146,7 @@ def snapshot(input_uri: str, result_root: str, output_root: str) -> dict[str, ob
         "revision": REVISION,
         "source_passages_sha256": SOURCE_MANIFEST_SHA256,
         "status": "glm_screening_and_novelty_only_not_scientifically_validated",
-        "pilot_indices": PILOT_INDICES,
+        ("passage_indices" if all_passages else "pilot_indices"): indices,
         "max_total_attempts_per_passage": MAX_ATTEMPTS,
         "collision_threshold_per_arm": COLLISIONS_TO_STOP,
         "status_counts": dict(sorted(status_counts.items())),
@@ -160,7 +162,11 @@ def snapshot(input_uri: str, result_root: str, output_root: str) -> dict[str, ob
     write_new(base + "aggregate.json", aggregate_bytes)
     write_new(base + "screened-novel.jsonl", candidate_bytes)
     manifest: dict[str, object] = {
-        "status": "private_glm_screened_pilot_not_training_ready",
+        "status": (
+            "private_glm_screened_full_wave_not_training_ready"
+            if all_passages
+            else "private_glm_screened_pilot_not_training_ready"
+        ),
         "revision": REVISION,
         "result_root": result_root,
         "source_sha256": SOURCE_MANIFEST_SHA256,
@@ -169,6 +175,8 @@ def snapshot(input_uri: str, result_root: str, output_root: str) -> dict[str, ob
         "distinct_screened_items": len(candidates),
         "completed_attempts": sum(status_counts.values()),
     }
+    if pilot_root is not None:
+        manifest["completed_pilot_root"] = pilot_root
     write_new(base + "manifest.json", (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode())
     return manifest
 
@@ -178,8 +186,15 @@ def main() -> None:
     parser.add_argument("--input", required=True)
     parser.add_argument("--results", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--all-passages", action="store_true")
+    parser.add_argument("--pilot-root", help="Read the ten completed v3 pilot passages instead of repeating them")
     args = parser.parse_args()
-    print(json.dumps(snapshot(args.input, args.results, args.output), indent=2))
+    print(
+        json.dumps(
+            snapshot(args.input, args.results, args.output, all_passages=args.all_passages, pilot_root=args.pilot_root),
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

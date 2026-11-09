@@ -1,3 +1,6 @@
+# Copyright The Marin Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """Pilot adaptive, paired MCQ generation with a bounded semantic-collision stop.
 
 All per-attempt GLM calls and decisions are private, immutable, and resumable.
@@ -261,6 +264,7 @@ async def run_passage(
     smoke_root: str,
     fit_smoke_root: str,
     *,
+    completed_pilot_root: str | None = None,
     max_attempts: int = MAX_ATTEMPTS,
     collision_threshold: int = COLLISIONS_TO_STOP,
 ) -> dict[str, object]:
@@ -272,6 +276,21 @@ async def run_passage(
         raise ValueError("Passage digest mismatch")
     passage_id = str(row["id"])
     root = destination.rstrip("/") + "/" + passage_id + "/"
+    completed = load(root + "summary.json")
+    if completed is None and completed_pilot_root is not None:
+        completed = load(completed_pilot_root.rstrip("/") + "/" + passage_id + "/summary.json")
+    if completed is not None:
+        if (
+            completed["revision"] != REVISION
+            or completed["id"] != passage_id
+            or completed["source_url"] != row["source_url"]
+            or completed["source_family"] != row["source_family"]
+            or completed["model"] != port.model
+            or completed["max_attempts"] != max_attempts
+            or completed["collision_threshold"] != collision_threshold
+        ):
+            raise ValueError(f"Incompatible completed adaptive passage: {passage_id}")
+        return completed
     # Reuse is legitimate only for a completed frozen paired run on this passage.
     original = load(prior_root.rstrip("/") + "/" + passage_id + "/summary.json") or load(
         smoke_root.rstrip("/") + "/" + passage_id + "/summary.json"
@@ -331,7 +350,10 @@ def main() -> None:
     parser.add_argument("--prior-prefix", required=True)
     parser.add_argument("--old-smoke-prefix", required=True)
     parser.add_argument("--fit-smoke-prefix", required=True)
-    parser.add_argument("--indices", required=True, help="Distinct frozen passage offsets; pin these for a pilot")
+    parser.add_argument("--indices", help="Distinct frozen passage offsets; pin these for a pilot")
+    parser.add_argument("--shard-index", type=int)
+    parser.add_argument("--shard-count", type=int)
+    parser.add_argument("--completed-pilot-prefix", help="Reuse complete v3 pilot passages in the full run")
     parser.add_argument("--max-attempts", type=int, default=MAX_ATTEMPTS)
     parser.add_argument("--collision-threshold", type=int, default=COLLISIONS_TO_STOP)
     parser.add_argument("--base-url")
@@ -346,7 +368,14 @@ def main() -> None:
         relay_service=None if args.base_url else args.relay_service,
     )
     rows = read_rows(args.input)
-    indices = [int(index) for index in args.indices.split(",")]
+    if (args.indices is None) == (args.shard_count is None):
+        raise ValueError("Specify either --indices or --shard-index/--shard-count")
+    if args.shard_count is not None:
+        if args.shard_count < 1 or args.shard_index is None or not 0 <= args.shard_index < args.shard_count:
+            raise ValueError("Invalid shard index/count")
+        indices = [i for i in range(len(rows)) if i % args.shard_count == args.shard_index]
+    else:
+        indices = [int(index) for index in args.indices.split(",")]
     if len(indices) != len(set(indices)) or any(i < 0 or i >= len(rows) for i in indices):
         raise ValueError("Passage offsets must be distinct and in range")
     for index in indices:
@@ -358,6 +387,7 @@ def main() -> None:
                 args.prior_prefix,
                 args.old_smoke_prefix,
                 args.fit_smoke_prefix,
+                completed_pilot_root=args.completed_pilot_prefix,
                 max_attempts=args.max_attempts,
                 collision_threshold=args.collision_threshold,
             )

@@ -1,14 +1,21 @@
+# Copyright The Marin Authors
+# SPDX-License-Identifier: Apache-2.0
+
 """Independent MCQ screening and provenance guards."""
 
+import asyncio
+import hashlib
 from pathlib import Path
 
 import pytest
+from taskforge_adapters.campaign import OpenAIModelPort
 
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.adaptive import (
     PassageProgress,
     ScreenedItem,
     apply_decision,
     first_stage_uri,
+    run_passage,
 )
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.finalize import read_json, write_new
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.prepare import extract_body
@@ -95,6 +102,43 @@ def test_first_attempt_prefers_frozen_sources_over_new_calls(tmp_path: Path) -> 
     write_once(fit + "/p/qfirst-fit.json", {"value": "unchanged"})
     assert first_stage_uri("p", "qfirst", prior, smoke, fit) == smoke + "/p/qfirst.json"
     assert first_stage_uri("p", "qfirst-fit", prior, smoke, fit) == fit + "/p/qfirst-fit.json"
+
+
+def test_completed_pilot_passage_skips_provider_and_preserves_frozen_record(tmp_path: Path) -> None:
+    text = "Adenine in DNA pairs with thymine."
+    row: dict[str, object] = {
+        "id": "passage-a",
+        "text": text,
+        "passage_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "source_url": "https://example.org/a",
+        "source_family": "medlineplus",
+    }
+    pilot = tmp_path / "pilot"
+    (pilot / "passage-a").mkdir(parents=True)
+    frozen: dict[str, object] = {
+        "id": row["id"],
+        "revision": "gov-bio-adaptive-mcq-glm-v1",
+        "source_url": row["source_url"],
+        "source_family": row["source_family"],
+        "model": "glm-test",
+        "max_attempts": 20,
+        "collision_threshold": 3,
+        "screened_distinct_ids": ["passage-a-qfirst-00"],
+    }
+    write_once(str(pilot / "passage-a" / "summary.json"), frozen)
+    result = asyncio.run(
+        run_passage(
+            row,
+            OpenAIModelPort("glm-test", "UNSET_TOKEN", base_url="http://127.0.0.1:1/v1"),
+            str(tmp_path / "new-wave"),
+            str(tmp_path / "v2"),
+            str(tmp_path / "v1-smoke"),
+            str(tmp_path / "v2-smoke"),
+            completed_pilot_root=str(pilot),
+        )
+    )
+    assert result == frozen
+    assert not (tmp_path / "new-wave").exists()
 
 
 def test_candidate_and_review_disagree_or_detect_ambiguity() -> None:
