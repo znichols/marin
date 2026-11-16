@@ -1,0 +1,31 @@
+{
+  "revision": "id-eval-acquisition-review-v1",
+  "catalog_commit": "c4f5c922a11acc68c0b70b46da8367a2a37a92cd",
+  "records": [
+    {
+      "family": "mmlu",
+      "variant": "mmlu-pro-biology",
+      "review": {
+        "scope": "preliminary_machine_readable_evidence_not_legal_clearance",
+        "evaluation_acquisition": "approved_private_eval_only",
+        "training_from_eval_questions_or_instructions": "prohibited_by_marin_policy",
+        "training_from_upstream_sources": "blocked_pending_per_source_rights_review",
+        "dataset_license_evidence": "MMLU-Pro Hugging Face card at pinned revision declares MIT; the upstream questions include MMLU, STEM websites, TheoremQA and SciBench with potentially distinct underlying rights.",
+        "policy_url": "https://github.com/marin-community/marin/issues/10197",
+        "dataset_card": "https://huggingface.co/datasets/TIGER-Lab/MMLU-Pro/blob/b189ec765aa7ed75c8acfea42df31fdae71f97be/README.md",
+        "upstream_leads": ["Original MMLU", "STEM websites", "TheoremQA", "SciBench"],
+        "note": "Never make TaskForge training prompts from these eval questions or CoT. Archive privately for provenance and overlap audit; source fresh tasks only from independently cleared material."
+      },
+      "artifact": {
+        "kind": "huggingface_dataset",
+        "repo": "TIGER-Lab/MMLU-Pro",
+        "revision": "b189ec765aa7ed75c8acfea42df31fdae71f97be",
+        "files": [
+          {"path": "README.md", "size": 11723, "sha256": "4bd710f67da3fa359a33edce1b4b5816b3de416c823c2624ba5e89c2557d2a47"},
+          {"path": "data/test-00000-of-00001.parquet", "size": 4144185, "sha256": "0e24a191921c2f453518a537a8b2117bd137e7714d4ef1565e9ba06c1ecb9ad8"},
+          {"path": "data/validation-00000-of-00001.parquet", "size": 42857, "sha256": "139423c23722e480c807ac4a191409a710cfce4eba744c1d641cf88e730e2078"}
+        ]
+      }
+    }
+  ]
+}
