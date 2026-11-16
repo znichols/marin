@@ -59,7 +59,10 @@ mixed-origin asset is cleared for RL training.
 - **Where it came from:** The [paper](https://arxiv.org/abs/2407.00466) and
   [pinned author README](https://github.com/westlake-autolab/Agent4S-BioKG/tree/9e166e2679122d2e064e7e6856ff294bd5763546)
   say KGQA was generated from expert-reviewed templates instantiated on a
-  subset of the Clinical Knowledge Graph (CKG); KGCheck was expert annotated.
+  subset of the Clinical Knowledge Graph (CKG). For KGCheck, authors used
+  Cypher queries to sample nodes/edges, cross-checked against updated
+  databases such as UniProt and IntAct and supporting literature, and had
+  experts review evidence for the 225 support/refute labels.
   CKG combines UniProt, TISSUES, STRING, SMPDB, SIGNOR, Reactome, IntAct,
   HGNC, DisGeNET, DISEASES and ontologies. SCV reconstructs SciFact and
   PubMedQA; its 5,664 abstracts are associated with those source datasets.
@@ -77,7 +80,10 @@ mixed-origin asset is cleared for RL training.
   query, and independently validate biological meaning. Privately screen new
   tasks against eval targets at the question, entity-pair, edge, relation,
   answer and evidence levels; keep exact eval target facts out of training
-  prompts/answers where they could turn the eval into memorization. This does
+  prompts/answers where they could turn the eval into memorization. **Graph
+  queries alone can grade KGQA but cannot establish KGCheck correctness**:
+  detecting erroneous or missing graph facts also requires rights-checked
+  *external* evidence and independent expert adjudication. This does
   **not** require making the whole graph or all entities disjoint. If a
   database component's terms prohibit training, remove that component and
   its derived edges before generating tasks, or use a separately licensed
@@ -227,7 +233,10 @@ If a usable subset exists, make a pinned *source-only* graph view (never mount
 Author perhaps 20 new objectives across evidence-backed graph exploration,
 relationship composition and consistency checking. Record each objective's
 graph revision, generating seed, query program, referenced triples, computed
-answer and independent verifier. Privately reject tasks equivalent to eval
+answer and independent verifier for KGQA. Treat KGCheck-style error detection
+as a separate phase requiring updated external databases/literature and
+expert-reviewed labels; do not grade it from the same graph alone. Privately
+reject tasks equivalent to eval
 queries or gold outcomes; retain the same graph and biological distribution.
 This is a pilot design, **not a statement that the graph's rights are settled**.
 
