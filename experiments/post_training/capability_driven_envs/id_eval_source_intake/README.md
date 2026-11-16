@@ -54,11 +54,12 @@ Private metadata-only snapshots (outside Git):
 
 ## Stage 2: inspect the pinned data and rights evidence together
 
-`source_candidates.json` lists two small, public sources to inspect: MMLU-Pro
-biology and Biomni Eval1. This is an acquisition list, **not an approval
-registry**. The script checks access, declared license, exact revision and
-file hashes while pulling the card and data. It reads only provenance columns
-(`src` or `task_name`) to map upstream families, and records card restriction
+`source_candidates.json` pins the initial MMLU-Pro and Biomni Eval1 sources;
+later batches use a separate private candidate plan passed by `--candidates`
+and `--candidate-sha256`. These are acquisition lists, not rights decisions.
+The script checks access, declared license, exact revision and file hashes
+while pulling the card and data. It reads only provenance columns (`src` or
+`task_name`) when available, otherwise parquet row counts, and records restriction
 markers and unresolved underlying terms in each private manifest. It refuses
 gated sources, changed license declarations, missing pins, a download over
 10 MB, output inside Git, and changed existing bytes. No question text or
@@ -96,12 +97,51 @@ manifest SHA-256 `a40e2f15cbcbb26a0b7664e7b49c5edd24bcefd6270a86bfe8ba1e1672d474
 Both record the observed dataset license and upstream source labels, while
 marking underlying-source terms unchecked. The older MMLU-Pro v1 snapshot
 remains unchanged.
+
 A private *metadata-only* scan of `category` and `src` found 717 biology rows
 in the 12,032-item test split: **219** sourced from original MMLU biology and
 **498** tagged STEM-website biology/genetics; the 70-item validation split has
 five biology rows. These counts are provenance leads, not a cleared training
 pool. The original questions, options, answers, and CoT were not printed,
 committed, or given to a task generator.
+
+## Existing S3 copies and five-source first batch
+
+Before fetching new data, a metadata-only S3 scan covered all **381** artifact
+directories under `s3://marin-us-east-02a/marin/task-curation/download/`, plus
+the TaskForge source-corpora prefixes. Marin already has pinned copies of
+MMLU-Pro **test and validation** (`b189ec7`) and GPQA Diamond (`83022ce`) in
+its task-curation download cache; it also has processed eval and run outputs.
+The earlier TaskForge MMLU-Pro snapshot duplicated those Marin downloads; the
+five-source batch did not fetch MMLU-Pro again. These are not additional
+independently sourced training inputs. The GPQA
+source remains gated; no new copy was fetched. The private scan record is at
+`.../id-evals/inventory/small-batch-5-v1/existing-marin-downloads.json`
+(SHA-256 `0e671b67e9edf86ed06f0b37717d23859ac9dc9d3d800e8574b892225fe55897`).
+The scan does not rule out copies under unrelated user prefixes.
+
+Five further public repositories had no matching HF download artifact in that
+scan. Their **pinned, small partial selections** (38 objects, 2,930,222 bytes)
+were downloaded and verified again from S3. The private plan is
+`.../id-evals/inventory/small-batch-5-v1/candidate-plan.json` (SHA-256
+`fd567c09840534c5f802837b9a605fa9a824e09010e17fd958209b6406008000`).
+All paths below start at
+`s3://marin-us-east-02a/marin4sc/taskforge/source-corpora/id-evals/`:
+
+| Dataset | Private partial snapshot | Manifest SHA-256 | What is still missing |
+| --- | --- | --- | --- |
+| BioKGBench | `biokgbench/partial-4d992e7-batch5-v1/` | `e9aaa5ad7112f76cbbb48ee7fcc5e7e962ade8fc8872a4e8708536fed1dcf45e` | Full KG/source databases (~10.8 GB) and linked paper corpus; do not bulk-copy without sign-off. |
+| LAB-Bench | `lab-bench/partial-5c77cec-batch5-v1/` | `d2b41a1f6d3fb90301069fc96c5bd4b633b167c479cfdd3ee7110c5a3504e466` | FigQA/TableQA and third-party figures; text subsets and license only. LABBench2 is a different release. |
+| CORE-Bench | `core-bench/partial-18ac8ed-batch5-v1/` | `3ebad980a59367e387b2603cf91bd4b4af03a39c6907cddde50593766c220f7f` | Test JSON is encrypted; paper/capsule assets and terms unresolved. |
+| DiscoveryBench | `discoverybench/partial-e54ec03-batch5-v1/` | `e90cdbc6cb231dd8076d24b23ef1d932be6a7624cc5060f84e097a4f759c97d4` | Only synthetic **train** marine-biology files and synthetic answer key; real/test tracks not included. |
+| BixBench | `bixbench/partial-f8cc3bd-batch5-v1/` | `75d112911271fb68709cdaf703da80712fb59eaa76b8803ca7de1a03234932ec` | Index plus one small capsule; most capsules (~5.9 GB total) and underlying notebook/asset rights unresolved. |
+
+Each snapshot includes its pinned card, and LAB-Bench includes its license file.
+The dataset-level license is recorded, but is not assumed to cover papers,
+figures, protocols, patient data, or other third-party assets. No snapshot is
+an RL training dataset. To reproduce a batch item, obtain the pinned private
+plan locally and pass `--candidates <plan> --candidate-sha256 <digest>` to
+`acquire.py`, along with the family, variant, and a fresh private output URI.
 
 ## Continue with upstream sources
 

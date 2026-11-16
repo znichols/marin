@@ -3,6 +3,7 @@
 
 """Rights-gated metadata joins and immutable private acquisition guards."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,11 @@ from experiments.post_training.capability_driven_envs.id_eval_source_intake.acqu
     storage,
     write_pinned,
 )
-from experiments.post_training.capability_driven_envs.id_eval_source_intake.inventory import historical_id_rows
+from experiments.post_training.capability_driven_envs.id_eval_source_intake.inventory import (
+    CATALOG_COMMIT,
+    historical_id_rows,
+    sha256,
+)
 from experiments.post_training.capability_driven_envs.id_eval_source_intake.probe_rights import exclusion_reason
 
 
@@ -51,6 +56,19 @@ def test_only_pinned_public_candidates_can_be_acquired() -> None:
     assert source_candidate("biomni-eval1", "biomni-eval1-tool-enabled")["artifact"]["declared_license"] == "apache-2.0"
     with pytest.raises(ValueError, match="No unique source candidate"):
         source_candidate("gpqa", "gpqa-diamond-biology")
+
+
+def test_external_candidate_plan_requires_pinned_hash(tmp_path: Path) -> None:
+    candidate = source_candidate("mmlu", "mmlu-pro-biology")
+    plan = {"revision": "batch-test", "catalog_commit": CATALOG_COMMIT, "records": [candidate]}
+    path = tmp_path / "candidate.json"
+    path.write_text(json.dumps(plan))
+    with pytest.raises(ValueError, match="exact SHA-256"):
+        source_candidate("mmlu", "mmlu-pro-biology", path, "0" * 64)
+    assert (
+        source_candidate("mmlu", "mmlu-pro-biology", path, sha256(path.read_bytes()))["candidate_revision"]
+        == "batch-test"
+    )
 
 
 def test_output_must_be_outside_git_and_frozen_bytes_cannot_change(tmp_path: Path) -> None:

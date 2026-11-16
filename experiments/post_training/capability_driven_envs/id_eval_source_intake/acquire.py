@@ -31,9 +31,14 @@ HF_API = "https://huggingface.co/api/datasets/"
 HF_RESOLVE = "https://huggingface.co/datasets/"
 
 
-def source_candidate(family: str, variant: str) -> dict[str, Any]:
+def source_candidate(
+    family: str, variant: str, candidate_path: Path = CANDIDATE_PATH, expected_sha256: str | None = None
+) -> dict[str, Any]:
     """Resolve a pinned public-source candidate without granting training permission."""
-    candidates = json.loads(CANDIDATE_PATH.read_text())
+    raw = candidate_path.read_bytes()
+    if candidate_path != CANDIDATE_PATH and (not expected_sha256 or sha256(raw) != expected_sha256):
+        raise ValueError("External candidate inventory requires its exact SHA-256")
+    candidates = json.loads(raw)
     if candidates["catalog_commit"] != CATALOG_COMMIT:
         raise ValueError("Source candidates refer to another catalog revision")
     matches = [row for row in candidates["records"] if (row["family"], row["variant"]) == (family, variant)]
@@ -45,7 +50,7 @@ def source_candidate(family: str, variant: str) -> dict[str, Any]:
         raise ValueError("Unsafe or missing artifact file paths")
     if sum(int(row["size"]) for row in record["artifact"]["files"]) > MAX_TOTAL_BYTES:
         raise ValueError("Acquisition exceeds the pilot's ten-megabyte ceiling")
-    return record
+    return {**record, "candidate_revision": candidates["revision"]}
 
 
 def storage(uri: str, endpoint_url: str | None) -> tuple[AbstractFileSystem, str]:
@@ -132,28 +137,37 @@ def acquire(record: dict[str, Any], fs: AbstractFileSystem, prefix: str) -> dict
         "all rights reserved",
     )
     provenance_counts: Counter[str] = Counter()
+    parquet_row_counts: dict[str, int] = {}
     for file in artifact["files"]:
         if not file["path"].endswith(".parquet"):
             continue
         with fs.open(f"{prefix}/{file['path']}", "rb") as stream:
-            table = pq.read_table(io.BytesIO(stream.read()), columns=[artifact["provenance_column"]])
-        provenance_counts.update(str(value) for value in table.column(0).to_pylist())
+            contents = io.BytesIO(stream.read())
+        if artifact["provenance_column"] is None:
+            parquet_row_counts[file["path"]] = pq.ParquetFile(contents).metadata.num_rows
+        else:
+            table = pq.read_table(contents, columns=[artifact["provenance_column"]])
+            provenance_counts.update(str(value) for value in table.column(0).to_pylist())
+    rights_inspection: dict[str, Any] = {
+        "dataset_license_declared": artifact["declared_license"],
+        "pinned_card_sha256": next(file["sha256"] for file in artifact["files"] if file["path"] == "README.md"),
+        "card_restriction_markers": [marker for marker in restriction_markers if marker in card.lower()],
+        "underlying_source_labels": dict(sorted(provenance_counts.items())),
+        "underlying_source_terms_checked": False,
+    }
+    if parquet_row_counts:
+        rights_inspection["parquet_row_counts"] = parquet_row_counts
     manifest = {
-        "candidate_revision": json.loads(CANDIDATE_PATH.read_text())["revision"],
+        "candidate_revision": record["candidate_revision"],
         "catalog_commit": CATALOG_COMMIT,
         "family": record["family"],
         "variant": record["variant"],
         "source_repo": repo,
         "source_revision": revision,
         "files": artifact["files"],
-        "rights_inspection": {
-            "dataset_license_declared": artifact["declared_license"],
-            "pinned_card_sha256": next(file["sha256"] for file in artifact["files"] if file["path"] == "README.md"),
-            "card_restriction_markers": [marker for marker in restriction_markers if marker in card.lower()],
-            "underlying_source_labels": dict(sorted(provenance_counts.items())),
-            "underlying_source_terms_checked": False,
-        },
+        "rights_inspection": rights_inspection,
         "status": "private_eval_source_upstream_rights_unresolved_not_training_input",
+        **({"artifact_coverage": artifact["coverage"]} if "coverage" in artifact else {}),
     }
     manifest_bytes = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode()
     write_pinned(fs, f"{prefix}/manifest.json", manifest_bytes)
@@ -171,8 +185,10 @@ def main() -> None:
     parser.add_argument("--variant", required=True)
     parser.add_argument("--output", required=True, help="Private, fresh local or s3:// directory; never a Git path")
     parser.add_argument("--s3-endpoint-url", help="Explicit CoreWeave virtual-hosted S3 endpoint for S3 output")
+    parser.add_argument("--candidates", type=Path, default=CANDIDATE_PATH, help="Private pinned acquisition plan")
+    parser.add_argument("--candidate-sha256", help="Required SHA-256 when --candidates is outside this package")
     args = parser.parse_args()
-    record = source_candidate(args.family, args.variant)
+    record = source_candidate(args.family, args.variant, args.candidates, args.candidate_sha256)
     fs, prefix = storage(args.output, args.s3_endpoint_url)
     print(json.dumps(acquire(record, fs, prefix), sort_keys=True))
 
