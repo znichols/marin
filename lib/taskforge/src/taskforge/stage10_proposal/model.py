@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal, get_args
+from urllib.parse import urlsplit
 
 from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter, with_config
 from verifyit.json_objects import unique_object
@@ -42,6 +43,7 @@ RESEARCH_CITATION = re.compile(r"research\[(\d+)\]")
 class SourceKind(StrEnum):
     CAPABILITY = "capability"
     REPO = "repo"
+    WEB_PAGE = "web_page"
 
 
 class Environment(StrEnum):
@@ -126,11 +128,23 @@ class ProposalFormatError(ValueError):
 @with_config(ConfigDict(extra="forbid"))
 @dataclass(frozen=True)
 class SourceRef:
-    """Where the proposal came from: a catalog capability id or a repository, and its content hash."""
+    """A catalog capability, repository, or pinned HTTPS page and its archived-content hash.
+
+    A web-page reference identifies bytes for provenance, not the page's licensing status.
+    """
 
     kind: SourceKind
     ref: Text
     hash: Text
+
+    def __post_init__(self) -> None:
+        if self.kind is not SourceKind.WEB_PAGE:
+            return
+        url = urlsplit(self.ref)
+        if url.scheme != "https" or not url.netloc or url.fragment or url.username or url.password:
+            raise ValueError("web_page source.ref must be an HTTPS page URL without credentials or fragment")
+        if re.fullmatch(r"[0-9a-f]{64}", self.hash) is None:
+            raise ValueError("web_page source.hash must be a lowercase SHA-256 digest of the archived page")
 
 
 @with_config(ConfigDict(extra="forbid"))

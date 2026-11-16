@@ -67,7 +67,7 @@ from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.r
     read_rows,
 )
 
-REVISION = "gov-bio-mcq-taskforge-provisional-v2"
+REVISION = "gov-bio-mcq-taskforge-provisional-v3"
 DESK_REVIEW_SHA256 = "2afab1c70a07bdcb710045a2738e648fecb17aa3e7b887de23ec154153cd6f87"
 DUPLICATE_REVIEW_SHA256 = "32d507952ee78ba2a03d56537ee1bddacff5af11252b5078877094fa73abf04b"
 
@@ -117,6 +117,7 @@ def provisional_task(record: dict[str, Any]) -> tuple[TaskSpec, dict[str, Any]]:
         "original_correct_index": item.correct_index,
         "shuffled_to_original_indices": order,
         "shuffled_correct_letter": key,
+        "source_page_url": record["source_url"],
         "source_page_sha256": record["source_page_sha256"],
         "passage_sha256": record["passage_sha256"],
         "rights_cleared": False,
@@ -174,7 +175,7 @@ def proposal_for(task: TaskSpec, record: dict[str, Any]) -> TaskProposal:
     body = "\n\n".join(f"## {title}\n{text}" for title, text in sections.items())
     header = ProposalHeader(
         id=task.id,
-        source=SourceRef(kind=SourceKind.REPO, ref=record["source_url"], hash=record["source_page_sha256"]),
+        source=SourceRef(kind=SourceKind.WEB_PAGE, ref=record["source_url"], hash=record["source_page_sha256"]),
         environment=Environment.REASONING,
         solver_machine=SolverMachine.NONE,
         verification=Verification.CODE,

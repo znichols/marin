@@ -346,7 +346,65 @@ it contains **630 provisional TaskSpecs** with TaskSpec JSONL SHA-256
 Shuffled key positions A/B/C/D are **146/154/171/159**. The lexical overlap
 check cannot establish that all other objectives are distinct. Adjudicated
 item verdicts, page-level rights, and cross-passage semantic review are still
-required before Stage 60 acceptance or any training use. TaskForge's current
-proposal source kinds cover repositories and capability IDs, not archived web
-pages; this structural probe uses the repository kind with a pinned page URL
-and hash. Add an accurate web-page source kind before production acceptance.
+required before Stage 60 acceptance or any training use. The frozen v2
+projection's transient structural proposal represented its archived page as a
+repository; **do not reinterpret or overwrite that snapshot**.
+
+## Pinned web-page source and three-item diagnostic pilot
+
+TaskForge now accepts a `web_page` proposal source with an HTTPS URL and a
+lowercase SHA-256 of its archived bytes. This identifies provenance, **not
+permission**. `project_reviewed.py` produced a **separate v3** snapshot at
+`.../dual-mcq-glm-v3/snapshots/taskforge-provisional-v3/`: all **630** private,
+provisional TaskSpecs passed structural preflight and exact-key controls with
+a web-page source reference. The v3 manifest SHA-256 is
+`71b61d7fe84f94a0c12b0531e108cbeb8b2de2cd41e3133ddb032f0c1bb47c4f`;
+TaskSpec JSONL SHA-256 is
+`d3668d55069220f1f7f4000d95b4f27bf9983bb0b644bc2cc27c0334191a7df3`.
+The companion mapping (SHA-256
+`ecd2aa72799660bb28b53b87a246ebf5246a1be1d9df470e04a6d5338b108137`)
+records each page URL, page hash, passage hash, and option-key mapping. All
+rights and expert-review flags remain false. V1 and v2 remain untouched.
+
+`audit_page_rights.py` hash-checked the **101** contributing archived pages
+against the frozen source manifest and saved private indicator records under
+`.../dual-mcq-glm-v3/reviews/page-rights-indicators-v1/` (JSONL SHA-256
+`f4a30f194536ea1be4d64f7cb148b06d319667a7e8ee897d16bea8edb3535d9d`).
+One page triggered the string *adapted from* while explaining CRISPR's natural
+bacterial origin; that is **not** a third-party-content attribution. The
+scanner found no other explicit markers, but this **does not** clear even one
+page for training; page-level editorial/third-party-rights review remains a
+human gate. The archived MedlinePlus and NHGRI policies likewise do not grant
+permission for every embedded image, quotation, or third-party asset.
+
+A separate, explicitly **non-expert** assistant check selected three v2
+introductory MCQs (meiosis, translation, DNA replication) against their pinned
+passages for a diagnostic TaskForge solver pilot. The private selection is
+`.../dual-mcq-glm-v3/reviews/assistant-desk-sample-1/solver-pilot-ids-v1.json`
+(SHA-256 `1976035f4576d9f91c4a54c3c39d94765eae78b2e0c6311b023a9c6645e97449`).
+`solver_pilot.py` ran the ordinary Stage 50 preflight/lowering/solver-trial
+path with **OpenAI GPT-4.1 mini via OpenAI and Gemini 2.5 Flash via Google AI
+Studio**, pinned OpenRouter routes, temperature 0, one trial per task and
+model, zero trial retries, and a **$2 pre-call spend gate**. All **six
+trials were graded and keyed correct**, all six provider routes were verified;
+recorded provider charges total **$0.0004285**. Private per-call IDs, route
+metadata, ledgers, rollouts and grades are under
+`.../dual-mcq-glm-v3/calibration/openrouter-solver-pilot-v1/`. These three
+easy items and six calls provide **no** difficulty estimate, scientific
+certification, or generalization claim. No v2/v3 task has Stage 60 acceptance,
+and neither projection is training-ready.
+
+`control_pilot.py` replayed TaskForge Stage 50 scripted controls through
+RolloutEngine for those **same three v2 items**: keyed reference, wrong option,
+non-JSON key-leak shortcut, and empty malformed submission. The initial
+`.../calibration/stage50-grader-controls-v1/` run preserved all **12 ungraded**
+attempts: RolloutEngine requires usage tokens to enforce a token budget, but
+scripted turns supply none. A **separate v2 run** removed the token budget for
+scripted controls (not for the OpenRouter solver trials) and saved full
+attempt/ledger evidence under
+`.../calibration/stage50-grader-controls-v2/`. All **12 controls met their
+expectations**: three graded positive 1.0 and nine graded negative/malformed
+0.0. This verifies only the grader and extraction contract on these three
+items, *not* that the underlying biology key is correct. The solver and
+control runs are separate diagnostics, **not** a complete TaskForge Stage 50
+round; no adversarial search or Stage 60 review was performed.

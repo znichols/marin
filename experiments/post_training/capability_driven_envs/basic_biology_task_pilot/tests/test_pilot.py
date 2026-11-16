@@ -8,6 +8,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from taskforge.spec.controls import validate_controls
 from taskforge.stage20_triage.preflight import preflight
 from taskforge_adapters.campaign import OpenAIModelPort
 
@@ -19,6 +20,11 @@ from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.a
     collision_review_issue,
     first_stage_uri,
     run_passage,
+)
+from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.audit_page_rights import page_indicators
+from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.control_pilot import (
+    CONTROL_LIMITS,
+    controls,
 )
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.finalize import read_json, write_new
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.prepare import extract_body
@@ -50,6 +56,18 @@ def test_extract_stops_before_external_references_and_omits_images() -> None:
     <h2>Scientific journal articles for further reading</h2>
     <p>External copyrighted paper.</p></article>"""
     assert extract_body(html, source="medlineplus") == ["What is DNA?", "A base pairs with T."]
+
+
+def test_page_rights_indicators_flag_article_credits_but_not_site_chrome() -> None:
+    html = b"""<html><footer>Site copyright and all rights reserved</footer>
+    <main><article><p>Cells contain DNA.</p>
+    <figure><figcaption>Photo courtesy of a third-party laboratory.</figcaption></figure>
+    <p>Table adapted from an outside publication; used with permission.</p>
+    </article></main></html>"""
+    indicators = page_indicators(html)
+    assert indicators["explicit_copyright"] == 0
+    assert indicators["permission"] == 2
+    assert indicators["third_party_credit"] == 1
 
 
 def test_blinded_review_hides_reference_key_and_quote() -> None:
@@ -130,7 +148,7 @@ def test_taskforge_projection_remaps_key_and_grades_real_task() -> None:
         "id": "nhgri-example-afirst-08",
         "item": item.model_dump(mode="json"),
         "passage_sha256": "passage-hash",
-        "source_page_sha256": "page-hash",
+        "source_page_sha256": "a" * 64,
         "source_url": "https://www.genome.gov/example",
     }
     task, mapping = provisional_task(record)
@@ -140,7 +158,13 @@ def test_taskforge_projection_remaps_key_and_grades_real_task() -> None:
         mapping["shuffled_correct_letter"]
     ) - ord("A")
     assert grade_controls(task, mapping["shuffled_correct_letter"]) == (1.0, 0.0)
-    assert asyncio.run(preflight(proposal_for(task, record))).decision.value == "accept"
+    validate_controls(task, controls(mapping["shuffled_correct_letter"]))
+    assert CONTROL_LIMITS.max_total_tokens is None
+    proposal = proposal_for(task, record)
+    assert proposal.header.source.kind.value == "web_page"
+    assert proposal.header.source.ref == mapping["source_page_url"]
+    assert proposal.header.source.hash == mapping["source_page_sha256"]
+    assert asyncio.run(preflight(proposal)).decision.value == "accept"
     assert "not-training-ready" in task.tags
 
 
