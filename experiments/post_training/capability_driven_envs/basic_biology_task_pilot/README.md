@@ -248,3 +248,105 @@ Private `screened-novel.jsonl` SHA-256:
 `f748948a6bfb715e3caaf83164f84e2a3318de093c85350482982b12549c5501`.
 The aggregate retains a SHA-256 for every passage and attempt summary, and
 links all ten prior pilot passages without copying their private items.
+
+### Assistant desk triage and TaskForge structural probe
+
+A deterministic hash-ranked sample selected one item in each populated
+source-family × arm × early/late attempt × lower/higher passage-yield stratum
+(16 items total). An assistant inspected the pinned source passages and
+questions without new provider calls. This is **not** a domain-expert or
+rights review and is not a representative error-rate estimate: nine sampled
+items were judged outside the intended core Bio 101 scope, five need further
+quality review, and two need expert review. A targeted follow-up on a
+high-yield passage found a substantively wrong reference: an item asks for
+the number of chromosomes in a dog and keys **39**, although the source's
+**39 pairs** imply 78 chromosomes. The targeted follow-up is separate from
+the stratified sample. No items were approved.
+
+Private, immutable per-item notes and sample IDs are archived at:
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/reviews/assistant-desk-sample-1/
+```
+
+The review manifest SHA-256 is
+`10da0bcd9a5e92ed68b10741242b85bdd4aa131aab4b01b203d98e211d3303f0`.
+An offline *private* TaskForge preflight and exact-grader probe constructed
+TaskSpecs from the correctly keyed chromosome-pairs item and the incorrectly
+keyed chromosome-count item. Both passed structural preflight; for both,
+the stored reference scored 1 and an alternative scored 0. This establishes
+that TaskForge can represent and deterministically grade the four-option
+format, **not** that it can certify biology correctness: the wrong key also
+passes these controls. A production bridge must require independently
+reviewed reference answers, curricular fit, distractors, duplicates and
+page-level rights **before** final acceptance or any training export. Keep
+the original and remapped option orders and key in a versioned private
+projection; do not run Stage 60 acceptance on these leads as they stand.
+
+### Full 840-item re-screen and provisional TaskForge projection
+
+`review_full.py` ran a fresh, key-blinded GLM-5.3 science/curriculum/distractor
+review on **all 840** frozen candidates via eight CoreWeave shards. The four
+pilot reviews were reused without repeating paid calls. Both source text and
+candidate list were hash-checked, and every call and deterministic decision
+was saved separately. **643** received no objection from this additional GLM
+screen; **197** were quarantined. Objections included curricular concerns
+(88), distractors (49), time-sensitive claims (45), missing reviewer source
+quotes (41), and biological issues (24); categories overlap. This is a *second
+screen by the same model family*, **not** independent scientific adjudication.
+It rejected the incorrectly keyed dog-chromosome question, but four of nine
+items the assistant desk review flagged as outside core Bio 101 passed this
+model screen. The false-negative examples prevent treating its 643 passes as
+validated quality. An exact cross-passage paraphrase about mitochondria also
+survived both GLM novelty and quality screens; cross-passage semantic
+uniqueness remains unresolved.
+
+`project_reviewed.py` verified all **840** review records, replayed their
+screening decisions, and withheld all 17 assistant desk-review items. It
+constructed **634 private, provisional TaskSpecs** from the remaining GLM
+passes, including versioned deterministic option shuffling and key remapping.
+For each TaskSpec, TaskForge proposal preflight accepted the structure, the
+saved key graded 1.0, and a different letter graded 0.0. The shuffled key
+positions are A/B/C/D = **138/157/164/175**. These are *structurally
+TaskForge-compatible*, not Stage 60 accepted tasks, a training projection,
+or a rights-cleared question bank. The known near-duplicate is still present
+in this frozen **v1 provisional** snapshot; resolve or quarantine it before
+any later projection. Both generated-item roots remain private:
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/reviews/glm-science-v1/
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/snapshots/taskforge-provisional-v1/
+```
+
+The provisional manifest SHA-256 is
+`42983b8951f6134230a9e47261b292c1414ca2ceb7d5db8ed3c29c74f34f8260`;
+private TaskSpecs SHA-256 is
+`e2093582dbc089fdf6df4a652b7526ef48c2f1d6c6cf24f19f6a19598162d5c7`.
+No new source-page rights approval or domain-expert reference check was made.
+Keep all outputs outside git and BioTasks eval, and do not train, release,
+or use these TaskSpecs as validated evaluations.
+
+A corpus-wide token/answer-overlap check followed by an assistant desk review
+identified **three** likely duplicate question pairs across different
+passages/articles (mitochondria, DNA sequencing, informed consent). The
+private duplicate review is in the desk-review prefix; its SHA-256 is
+`32d507952ee78ba2a03d56537ee1bddacff5af11252b5078877094fa73abf04b`.
+Both members of each pair were held, including the two already quarantined
+by GLM. The **v1 snapshot is unchanged**. A separate, remotely hash-verified
+v2 projection excludes the four additional model-screened duplicate items:
+
+```text
+s3://marin-us-east-02a/marin4sc/taskforge/task-library/campaigns/basic-biology/dual-mcq-glm-v3/snapshots/taskforge-provisional-v2/
+```
+
+The v2 private manifest SHA-256 is
+`658537604c5cf51effb2382e781f4b524213fe38f5ad20b5e29bf70541cf2a81`;
+it contains **630 provisional TaskSpecs** with TaskSpec JSONL SHA-256
+`e6183697a80f32faade375d3a5b8d3896f161ec06b19470c8e3f10b9329dd960`.
+Shuffled key positions A/B/C/D are **146/154/171/159**. The lexical overlap
+check cannot establish that all other objectives are distinct. Adjudicated
+item verdicts, page-level rights, and cross-passage semantic review are still
+required before Stage 60 acceptance or any training use. TaskForge's current
+proposal source kinds cover repositories and capability IDs, not archived web
+pages; this structural probe uses the repository kind with a pinned page URL
+and hash. Add an accurate web-page source kind before production acceptance.

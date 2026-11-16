@@ -8,6 +8,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from taskforge.stage20_triage.preflight import preflight
 from taskforge_adapters.campaign import OpenAIModelPort
 
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.adaptive import (
@@ -21,6 +22,16 @@ from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.a
 )
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.finalize import read_json, write_new
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.prepare import extract_body
+from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.project_reviewed import (
+    grade_controls,
+    proposal_for,
+    provisional_task,
+)
+from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.review_full import (
+    ScienceReview,
+    disposition,
+    review_prompt,
+)
 from experiments.post_training.capability_driven_envs.basic_biology_task_pilot.run_glm import (
     MCQ,
     BlindReview,
@@ -52,6 +63,85 @@ def test_blinded_review_hides_reference_key_and_quote() -> None:
     assert "correct_index" not in prompt
     assert "A with T" in prompt  # Source visible, generated evidence label not revealed.
     assert "best 0-based selected_index" in prompt
+
+
+def test_full_review_quarantines_a_wrong_reference_despite_grounded_quote() -> None:
+    passage = "A dog has 39 pairs of chromosomes, meaning it has 78 chromosomes."
+    item = MCQ(
+        question="How many chromosomes does a dog have in total?",
+        options=("39", "78", "46", "23"),
+        correct_index=0,
+        evidence_quote="A dog has 39 pairs of chromosomes",
+    )
+    review = ScienceReview(
+        best_index=1,
+        other_defensible_indices=[],
+        correct_biology=True,
+        supported_by_passage=True,
+        fits_intro_biology=True,
+        distractors_plausible=True,
+        time_sensitive_or_outdated=False,
+        evidence_quote="A dog has 39 pairs of chromosomes",
+        biological_issue="",
+        curricular_issue="",
+        distractor_issue="",
+        explanation="The question asks for chromosomes, not pairs; 39 pairs means 78 chromosomes.",
+    )
+    status, issues = disposition(item, review, passage)
+    assert status == "quarantined_for_review"
+    assert issues == ["reviewer_disagrees_with_key"]
+    assert "correct_index" not in review_prompt(passage, item)
+
+
+def test_full_review_requires_verbatim_source_support() -> None:
+    item = MCQ(
+        question="How many chromosomes does a dog have in total?",
+        options=("39", "78", "46", "23"),
+        correct_index=1,
+        evidence_quote="A dog has 39 pairs of chromosomes",
+    )
+    review = ScienceReview(
+        best_index=1,
+        other_defensible_indices=[],
+        correct_biology=True,
+        supported_by_passage=True,
+        fits_intro_biology=True,
+        distractors_plausible=True,
+        time_sensitive_or_outdated=False,
+        evidence_quote="The dog has 78 chromosomes",
+        biological_issue="",
+        curricular_issue="",
+        distractor_issue="",
+        explanation="A dog has 39 pairs, which is 78 chromosomes in total.",
+    )
+    status, issues = disposition(item, review, "A dog has 39 pairs of chromosomes.")
+    assert status == "quarantined_for_review"
+    assert issues == ["review_quote_not_in_passage"]
+
+
+def test_taskforge_projection_remaps_key_and_grades_real_task() -> None:
+    item = MCQ(
+        question="How many chromosomes does a dog have in total?",
+        options=("39", "78", "46", "23"),
+        correct_index=1,
+        evidence_quote="A dog has 39 pairs of chromosomes.",
+    )
+    record = {
+        "id": "nhgri-example-afirst-08",
+        "item": item.model_dump(mode="json"),
+        "passage_sha256": "passage-hash",
+        "source_page_sha256": "page-hash",
+        "source_url": "https://www.genome.gov/example",
+    }
+    task, mapping = provisional_task(record)
+    prompt = task.context.events[0].content
+    assert "78" in prompt and 'key "choice"' in prompt
+    assert mapping["shuffled_to_original_indices"].index(item.correct_index) == ord(
+        mapping["shuffled_correct_letter"]
+    ) - ord("A")
+    assert grade_controls(task, mapping["shuffled_correct_letter"]) == (1.0, 0.0)
+    assert asyncio.run(preflight(proposal_for(task, record))).decision.value == "accept"
+    assert "not-training-ready" in task.tags
 
 
 def test_final_snapshot_refuses_mutating_existing_artifacts(tmp_path: Path) -> None:
