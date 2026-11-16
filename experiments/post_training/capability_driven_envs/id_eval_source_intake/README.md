@@ -180,7 +180,7 @@ It records only paths, sizes, parquet field names, subtask labels, source URL
 | --- | --- | --- |
 | BioKGBench | 23 graph database TSVs total 10.66 GB, with named upstreams including DisGeNET, STRING, SIGNOR, Reactome, SMPDB and IntAct; 51 PDF articles total 97 MB. The HF MIT tag does not establish rights to these independent databases or papers. | Inspect each upstream's terms and licenses separately; no direct graph or paper import yet. |
 | LAB-Bench | FigQA has 181 items with figures linked to 41 DOI sources; TableQA has 244 items linked to 134 DOI sources; SuppQA has 82 items with DOI sources. LitQA2 has 199 rows and 205 DOI links: 15 rows carry `is_opensource=False`, while `True` on the others is not a license grant. Sequence and database subtasks have null `source` values, not proven clearance. | Set aside the 15 flagged papers and all embedded figures/tables pending asset-level rights; independently generate *new* synthetic sequence exercises, not questions modeled on eval items. |
-| CORE-Bench | The test JSON is encrypted and the computational paper capsules are not included in the HF repository; its top-level MIT declaration cannot cover them. | No capsule-based training input until individual assets are identified and checked. |
+| CORE-Bench | The test JSON is encrypted (the official README publishes the passphrase); the computational paper capsules are not included in the HF repository. The top-level MIT declaration cannot cover them. | No capsule-based training input until individual assets are identified and checked. |
 | DiscoveryBench | 789 files across real and synthetic train/test tracks. A metadata-only pass found no per-task `license` fields in its JSON; real tracks have distinct external origins. | Check each real source and separation of splits; start with independent synthetic tables only, not benchmark tasks or answer keys. |
 | BixBench | 64 ZIP capsules contain 1,133 file members (including 49 notebooks, 633 `.xlsx` files, 24 FASTQs and nested ZIPs); no member named LICENSE was found. Absence of a license file is not proof of restriction or permission. | Resolve each capsule's original data/notebook terms before using assets; use high-level analysis skills with separately sourced data. |
 
@@ -193,6 +193,10 @@ implemented graders and overlap screening against private eval copies. For
 graph, literature, figures, and paper-capsule tasks, first pin genuinely
 independent upstream materials with their own rights evidence. Model agreement
 and TaskForge validation cannot substitute for source or biology review.
+
+A more detailed source-by-source map of eval composition, published origins,
+rights questions, and independent RL-task directions is in
+[`SOURCE_TO_RL_MAP.md`](SOURCE_TO_RL_MAP.md). It contains no held-out items.
 
 ## Continue with upstream sources
 
