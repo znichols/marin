@@ -1,20 +1,23 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Archive a reviewed public evaluation source privately, with byte-for-byte pins.
+"""Archive a public eval source and inspect its rights evidence and provenance.
 
 This is evaluation-data acquisition for provenance/overlap checks, not a
-TaskForge training import. No gated dataset, unchecked license or unknown
-upstream asset may bypass the explicit review record.
+TaskForge training import. Gated and unlicensed sources stay out; underlying
+assets are recorded as unresolved until checked against their own terms.
 """
 
 import argparse
+import io
 import json
 import os
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import fsspec
+import pyarrow.parquet as pq
 import requests
 from fsspec.spec import AbstractFileSystem
 
@@ -23,26 +26,20 @@ from experiments.post_training.capability_driven_envs.id_eval_source_intake.inve
 MAX_TOTAL_BYTES = 10_000_000
 PRIVATE_S3_ROOT = "s3://marin-us-east-02a/marin4sc/taskforge/source-corpora/id-evals/"
 REPO_ROOT = Path(__file__).resolve().parents[4]
-REVIEW_PATH = Path(__file__).with_name("reviewed_sources.json")
+CANDIDATE_PATH = Path(__file__).with_name("source_candidates.json")
 HF_API = "https://huggingface.co/api/datasets/"
 HF_RESOLVE = "https://huggingface.co/datasets/"
 
 
-def reviewed_source(family: str, variant: str) -> dict[str, Any]:
-    """Require an explicit, pinned, private-eval-only acquisition decision."""
-    review = json.loads(REVIEW_PATH.read_text())
-    if review["catalog_commit"] != CATALOG_COMMIT:
-        raise ValueError("Rights review refers to another catalog revision")
-    matches = [row for row in review["records"] if (row["family"], row["variant"]) == (family, variant)]
+def source_candidate(family: str, variant: str) -> dict[str, Any]:
+    """Resolve a pinned public-source candidate without granting training permission."""
+    candidates = json.loads(CANDIDATE_PATH.read_text())
+    if candidates["catalog_commit"] != CATALOG_COMMIT:
+        raise ValueError("Source candidates refer to another catalog revision")
+    matches = [row for row in candidates["records"] if (row["family"], row["variant"]) == (family, variant)]
     if len(matches) != 1:
-        raise ValueError("No unique reviewed source for this variant")
+        raise ValueError("No unique source candidate for this variant")
     record = matches[0]
-    if (
-        record["review"]["evaluation_acquisition"] != "approved_private_eval_only"
-        or record["review"]["training_from_eval_questions_or_instructions"] != "prohibited_by_marin_policy"
-        or record["review"]["training_from_upstream_sources"] != "blocked_pending_per_source_rights_review"
-    ):
-        raise ValueError("Dataset must remain an eval-only acquisition with unresolved upstream training rights")
     paths = [row["path"] for row in record["artifact"]["files"]]
     if not paths or len(set(paths)) != len(paths) or any(Path(p).is_absolute() or ".." in Path(p).parts for p in paths):
         raise ValueError("Unsafe or missing artifact file paths")
@@ -114,8 +111,8 @@ def acquire(record: dict[str, Any], fs: AbstractFileSystem, prefix: str) -> dict
     source = metadata.json()
     if source["sha"] != revision or source["gated"] is not False or source["private"] is not False:
         raise ValueError("Source changed, became gated, or is no longer public")
-    if source["cardData"]["license"] != "mit":
-        raise ValueError("Pinned review assumed a dataset-level MIT declaration")
+    if source["cardData"].get("license") != artifact["declared_license"]:
+        raise ValueError("Pinned dataset-level license declaration changed")
     for file in artifact["files"]:
         destination = f"{prefix}/{file['path']}"
         if fs.exists(destination):
@@ -125,16 +122,38 @@ def acquire(record: dict[str, Any], fs: AbstractFileSystem, prefix: str) -> dict
                 continue
             raise ValueError(f"Existing source artifact differs: {destination}")
         write_pinned(fs, destination, download(repo, revision, file))
+    with fs.open(f"{prefix}/README.md", "rb") as card_stream:
+        card = card_stream.read().decode("utf-8")
+    restriction_markers = (
+        "evaluation-only",
+        "evaluation only",
+        "not for training",
+        "non-commercial",
+        "all rights reserved",
+    )
+    provenance_counts: Counter[str] = Counter()
+    for file in artifact["files"]:
+        if not file["path"].endswith(".parquet"):
+            continue
+        with fs.open(f"{prefix}/{file['path']}", "rb") as stream:
+            table = pq.read_table(io.BytesIO(stream.read()), columns=[artifact["provenance_column"]])
+        provenance_counts.update(str(value) for value in table.column(0).to_pylist())
     manifest = {
-        "review_revision": json.loads(REVIEW_PATH.read_text())["revision"],
+        "candidate_revision": json.loads(CANDIDATE_PATH.read_text())["revision"],
         "catalog_commit": CATALOG_COMMIT,
         "family": record["family"],
         "variant": record["variant"],
         "source_repo": repo,
         "source_revision": revision,
         "files": artifact["files"],
-        "status": "private_eval_only_not_taskforge_training_input",
-        "underlying_source_rights_cleared": False,
+        "rights_inspection": {
+            "dataset_license_declared": artifact["declared_license"],
+            "pinned_card_sha256": next(file["sha256"] for file in artifact["files"] if file["path"] == "README.md"),
+            "card_restriction_markers": [marker for marker in restriction_markers if marker in card.lower()],
+            "underlying_source_labels": dict(sorted(provenance_counts.items())),
+            "underlying_source_terms_checked": False,
+        },
+        "status": "private_eval_source_upstream_rights_unresolved_not_training_input",
     }
     manifest_bytes = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode()
     write_pinned(fs, f"{prefix}/manifest.json", manifest_bytes)
@@ -153,7 +172,7 @@ def main() -> None:
     parser.add_argument("--output", required=True, help="Private, fresh local or s3:// directory; never a Git path")
     parser.add_argument("--s3-endpoint-url", help="Explicit CoreWeave virtual-hosted S3 endpoint for S3 output")
     args = parser.parse_args()
-    record = reviewed_source(args.family, args.variant)
+    record = source_candidate(args.family, args.variant)
     fs, prefix = storage(args.output, args.s3_endpoint_url)
     print(json.dumps(acquire(record, fs, prefix), sort_keys=True))
 

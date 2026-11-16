@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 
 from experiments.post_training.capability_driven_envs.id_eval_source_intake.acquire import (
-    reviewed_source,
+    source_candidate,
     storage,
     write_pinned,
 )
 from experiments.post_training.capability_driven_envs.id_eval_source_intake.inventory import historical_id_rows
+from experiments.post_training.capability_driven_envs.id_eval_source_intake.probe_rights import exclusion_reason
 
 
 def test_historical_id_never_promotes_to_training_rights() -> None:
@@ -39,11 +40,17 @@ def test_historical_id_never_promotes_to_training_rights() -> None:
     assert rows[0]["eval_access_status"] == "not_reviewed"
 
 
-def test_only_explicitly_reviewed_variant_can_be_acquired() -> None:
-    record = reviewed_source("mmlu", "mmlu-pro-biology")
-    assert record["review"]["training_from_eval_questions_or_instructions"] == "prohibited_by_marin_policy"
-    with pytest.raises(ValueError, match="No unique reviewed source"):
-        reviewed_source("gpqa", "gpqa-diamond-biology")
+def test_obvious_access_and_rights_exclusions_do_not_approve_other_sources() -> None:
+    assert exclusion_reason({"gated": "auto", "private": False, "cardData": {"license": "cc-by-4.0"}})
+    assert exclusion_reason({"gated": False, "private": False, "cardData": {}})
+    assert exclusion_reason({"gated": False, "private": False, "cardData": {"license": "mit"}}) is None
+
+
+def test_only_pinned_public_candidates_can_be_acquired() -> None:
+    assert source_candidate("mmlu", "mmlu-pro-biology")["artifact"]["declared_license"] == "mit"
+    assert source_candidate("biomni-eval1", "biomni-eval1-tool-enabled")["artifact"]["declared_license"] == "apache-2.0"
+    with pytest.raises(ValueError, match="No unique source candidate"):
+        source_candidate("gpqa", "gpqa-diamond-biology")
 
 
 def test_output_must_be_outside_git_and_frozen_bytes_cannot_change(tmp_path: Path) -> None:

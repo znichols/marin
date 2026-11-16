@@ -1,10 +1,10 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Collect public HF access/license signals for ID leads without reading any questions.
+"""Exclude obvious access/rights blockers using public HF repository metadata.
 
-This is evidence for human rights review, not automated permission to acquire
-items or generate training tasks. One source can supply several variants.
+The rest remain candidates for data-time rights inspection, not automatically
+permitted training inputs. No benchmark questions are read at this stage.
 """
 
 import argparse
@@ -42,8 +42,17 @@ def listed_hf_repos(inventory: dict[str, Any]) -> dict[str, list[str]]:
     return {repo: sorted(variants) for repo, variants in sorted(repos.items())}
 
 
+def exclusion_reason(metadata: dict[str, Any]) -> str | None:
+    """Defer gated terms and exclude undeclared licenses without inferring permission otherwise."""
+    if metadata.get("gated") is not False or metadata.get("private") is not False:
+        return "gated_or_private_access_terms_not_checked"
+    if not metadata.get("cardData", {}).get("license"):
+        return "no_dataset_license_declared"
+    return None
+
+
 def probe(inventory: dict[str, Any]) -> dict[str, Any]:
-    """Read only HF repository metadata; refuse to label source/item rights cleared."""
+    """Read only HF repository metadata; keep usable-looking sources as inspection leads."""
     if inventory["catalog_commit"] != CATALOG_COMMIT or inventory["historical_id_rows"] != 46:
         raise ValueError("Input must be the pinned ID catalog inventory")
     records = []
@@ -51,6 +60,7 @@ def probe(inventory: dict[str, Any]) -> dict[str, Any]:
         response = requests.get(HF_API + repo, timeout=30)
         response.raise_for_status()
         metadata = response.json()
+        reason = exclusion_reason(metadata)
         records.append(
             {
                 "repo": repo,
@@ -60,17 +70,18 @@ def probe(inventory: dict[str, Any]) -> dict[str, Any]:
                 "gated": metadata.get("gated"),
                 "private": metadata.get("private"),
                 "card_url": f"https://huggingface.co/datasets/{repo}/blob/{metadata['sha']}/README.md",
-                "item_rights_reviewed": False,
-                "upstream_rights_reviewed": False,
+                "exclusion_reason": reason,
+                "inspection_state": "excluded_or_deferred" if reason else "inspect_with_pinned_data",
                 "training_from_eval_items_permitted": False,
             }
         )
     return {
-        "status": "metadata_only_rights_signals_not_approval",
+        "status": "metadata_only_exclusion_pass",
         "catalog_commit": CATALOG_COMMIT,
         "hf_repositories": len(records),
         "license_declarations": dict(sorted(Counter(str(row["declared_license"]) for row in records).items())),
         "access_states": dict(sorted(Counter(str(row["gated"]) for row in records).items())),
+        "exclusion_counts": dict(sorted(Counter(str(row["exclusion_reason"]) for row in records).items())),
         "records": records,
     }
 

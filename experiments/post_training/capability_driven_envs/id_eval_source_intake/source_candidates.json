@@ -1,0 +1,38 @@
+{
+  "revision": "id-eval-source-candidates-v2",
+  "catalog_commit": "c4f5c922a11acc68c0b70b46da8367a2a37a92cd",
+  "purpose": "Private eval provenance and upstream-source discovery, never training from evaluation questions",
+  "records": [
+    {
+      "family": "mmlu",
+      "variant": "mmlu-pro-biology",
+      "artifact": {
+        "kind": "huggingface_dataset",
+        "repo": "TIGER-Lab/MMLU-Pro",
+        "revision": "b189ec765aa7ed75c8acfea42df31fdae71f97be",
+        "declared_license": "mit",
+        "provenance_column": "src",
+        "files": [
+          {"path": "README.md", "size": 11723, "sha256": "4bd710f67da3fa359a33edce1b4b5816b3de416c823c2624ba5e89c2557d2a47"},
+          {"path": "data/test-00000-of-00001.parquet", "size": 4144185, "sha256": "0e24a191921c2f453518a537a8b2117bd137e7714d4ef1565e9ba06c1ecb9ad8"},
+          {"path": "data/validation-00000-of-00001.parquet", "size": 42857, "sha256": "139423c23722e480c807ac4a191409a710cfce4eba744c1d641cf88e730e2078"}
+        ]
+      }
+    },
+    {
+      "family": "biomni-eval1",
+      "variant": "biomni-eval1-tool-enabled",
+      "artifact": {
+        "kind": "huggingface_dataset",
+        "repo": "biomni/Eval1",
+        "revision": "51f97feb9e377fac7384faae49046bc067283c38",
+        "declared_license": "apache-2.0",
+        "provenance_column": "task_name",
+        "files": [
+          {"path": "README.md", "size": 1379, "sha256": "19874359c2f6ac70cfc2754d1c7b5635157a2c159275bf6c1f54ca54f03550ba"},
+          {"path": "biomni_eval1_dataset.parquet", "size": 112221, "sha256": "cb8443b059cfc81d3d94bab35473bb271b4e7e1935473f2b61b5fae58a2db861"}
+        ]
+      }
+    }
+  ]
+}
