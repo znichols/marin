@@ -54,7 +54,9 @@ def verify_stream(stream: Any, file: dict[str, Any]) -> str:
     return content.hexdigest()
 
 
-def plan_record(path: Path, expected_sha256: str, family: str, variant: str) -> tuple[dict[str, Any], str]:
+def plan_record(
+    path: Path, expected_sha256: str, family: str, variant: str, transfer_approval: str | None = None
+) -> tuple[dict[str, Any], str]:
     """Validate a private full-tree plan, including the cross-region transfer cap."""
     raw = path.read_bytes()
     if sha256(raw) != expected_sha256:
@@ -76,13 +78,18 @@ def plan_record(path: Path, expected_sha256: str, family: str, variant: str) -> 
             raise ValueError("Unsafe source path or size")
         if len(file["oid"]) != (64 if file["lfs"] else 40):
             raise ValueError("Unpinned source object")
-    if sum(row["size"] for row in files) > MAX_TRANSFER_BYTES:
+    if sum(row["size"] for row in files) > MAX_TRANSFER_BYTES and not transfer_approval:
         raise ValueError("Full-tree transfer exceeds 10 GB; request explicit size-specific sign-off")
     return record, plan["revision"]
 
 
 def acquire_full(
-    record: dict[str, Any], plan_revision: str, plan_sha256: str, output: str, endpoint: str
+    record: dict[str, Any],
+    plan_revision: str,
+    plan_sha256: str,
+    output: str,
+    endpoint: str,
+    transfer_approval: str | None = None,
 ) -> dict[str, Any]:
     """Download and verify every pinned source blob, then seal the S3 snapshot."""
     if not output.startswith(PRIVATE_S3_ROOT):
@@ -167,6 +174,7 @@ def acquire_full(
             "underlying_source_terms_checked": False,
         },
         "status": "private_eval_source_upstream_rights_unresolved_not_training_input",
+        **({"transfer_approval": transfer_approval} if transfer_approval else {}),
     }
     raw = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode()
     write_pinned(fs, f"{prefix}/manifest.json", raw)
@@ -186,10 +194,14 @@ def main() -> None:
     parser.add_argument("--variant", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--s3-endpoint-url", required=True)
+    parser.add_argument("--transfer-approval", help="Record explicit human sign-off for copies over 10 GB")
     args = parser.parse_args()
-    record, revision = plan_record(args.plan, args.plan_sha256, args.family, args.variant)
+    record, revision = plan_record(args.plan, args.plan_sha256, args.family, args.variant, args.transfer_approval)
     print(
-        json.dumps(acquire_full(record, revision, args.plan_sha256, args.output, args.s3_endpoint_url), sort_keys=True)
+        json.dumps(
+            acquire_full(record, revision, args.plan_sha256, args.output, args.s3_endpoint_url, args.transfer_approval),
+            sort_keys=True,
+        )
     )
 
 

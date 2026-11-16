@@ -162,22 +162,37 @@ TaskForge training.
 | LAB-Bench | `lab-bench/full-5c77cec-v1/` | 334,210,432 B / 11 files | `87a68fe175bc6c3e697004d46cd052359733945cd143951700108dcaf9fdecf5` |
 | DiscoveryBench | `discoverybench/full-e54ec03-v1/` | 35,208,419 B / 789 files | `592400b6f3c081aa3260d62f96f6403ffb2b9d515e7942d815aaf49c59fca14d` |
 | BixBench | `bixbench/full-f8cc3bd-v1/` | 5,909,999,805 B / 67 files | `0e84035a0e5bbbfe0b64f0582e29859844f4b99dae27b9335236aa4b18b9ede4` |
+| BioKGBench | `biokgbench/full-4d992e7-v1/` | 10,797,688,927 B / 96 files | `4a0c65db2d737210cddd4d7ac4fde24c3f0cdabb3193a7ea0e5d2db8b7743026` |
 
-**BioKGBench is pending explicit size-specific transfer sign-off**: its
-complete HF tree is 10,797,688,927 bytes / 96 files, over the project's
-10 GB cross-region threshold. The script refuses a transfer of this size
-without a separate exception; its previous 1.1 MB selection is not the full
-source. No request to fetch the remaining files has been made to the storage service.
+BioKGBench exceeded the project's 10 GB cross-region threshold. The user
+explicitly approved the 10,797,688,927-byte HF-to-CoreWeave transfer on
+2026-11-16; its manifest records that sign-off. `acquire_full.py` refuses
+transfers above 10 GB unless a human approval note is supplied. The previous
+1.1 MB selection remains unchanged.
 
-Initial component boundaries for rights review: LAB-Bench includes FigQA and
-TableQA files with embedded third-party scientific material; CORE-Bench's
-repository includes an encrypted test file, while computational paper capsules
-live elsewhere; DiscoveryBench includes real and synthetic tracks with different
-underlying dataset origins; BixBench's full archive includes notebook capsules
-with separately sourced assets. BioKGBench's graph and paper corpus need their
-own rights review. Top-level CC-BY-SA, MIT, ODC-BY, or Apache declarations do
-not resolve rights to those embedded assets; no component is yet cleared for
-training.
+A private **metadata-only** component audit is at
+`.../id-evals/inventory/complete-hf-trees-5-v1/component-metadata-v1.json`
+(SHA-256 `6d1a6e4c5753ea562dd43257990b43e2f6e76a0bdefb315011596dce8b8d2ed5`).
+It records only paths, sizes, parquet field names, subtask labels, source URL
+*hostnames*, and counts—no eval questions, answers, passages, or CoT.
+
+| Component | Distinct rights/provenance issue | Training-source direction |
+| --- | --- | --- |
+| BioKGBench | 23 graph database TSVs total 10.66 GB, with named upstreams including DisGeNET, STRING, SIGNOR, Reactome, SMPDB and IntAct; 51 PDF articles total 97 MB. The HF MIT tag does not establish rights to these independent databases or papers. | Inspect each upstream's terms and licenses separately; no direct graph or paper import yet. |
+| LAB-Bench | FigQA has 181 items with figures linked to 41 DOI sources; TableQA has 244 items linked to 134 DOI sources; SuppQA has 82 items with DOI sources. LitQA2 has 199 rows and 205 DOI links: 15 rows carry `is_opensource=False`, while `True` on the others is not a license grant. Sequence and database subtasks have null `source` values, not proven clearance. | Set aside the 15 flagged papers and all embedded figures/tables pending asset-level rights; independently generate *new* synthetic sequence exercises, not questions modeled on eval items. |
+| CORE-Bench | The test JSON is encrypted and the computational paper capsules are not included in the HF repository; its top-level MIT declaration cannot cover them. | No capsule-based training input until individual assets are identified and checked. |
+| DiscoveryBench | 789 files across real and synthetic train/test tracks. A metadata-only pass found no per-task `license` fields in its JSON; real tracks have distinct external origins. | Check each real source and separation of splits; start with independent synthetic tables only, not benchmark tasks or answer keys. |
+| BixBench | 64 ZIP capsules contain 1,133 file members (including 49 notebooks, 633 `.xlsx` files, 24 FASTQs and nested ZIPs); no member named LICENSE was found. Absence of a license file is not proof of restriction or permission. | Resolve each capsule's original data/notebook terms before using assets; use high-level analysis skills with separately sourced data. |
+
+**Task generation starting point:** describe broad skills (sequence calculations,
+interpreting independent biomedical evidence, graph reasoning, quantitative
+analysis and reproducibility) without copying any held-out instruction or
+teacher answer. A first low-rights-risk pilot could generate deterministic
+sequence/GC/ORF tasks from freshly generated random DNA, with independently
+implemented graders and overlap screening against private eval copies. For
+graph, literature, figures, and paper-capsule tasks, first pin genuinely
+independent upstream materials with their own rights evidence. Model agreement
+and TaskForge validation cannot substitute for source or biology review.
 
 ## Continue with upstream sources
 

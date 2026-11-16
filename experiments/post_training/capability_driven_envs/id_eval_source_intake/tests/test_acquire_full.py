@@ -55,5 +55,7 @@ def test_full_plan_rejects_over_10gb_without_size_specific_signoff(tmp_path: Pat
     path.write_text(json.dumps(plan))
     with pytest.raises(ValueError, match="explicit size-specific sign-off"):
         plan_record(path, sha256(path.read_bytes()), "bio", "bio")
+    record, revision = plan_record(path, sha256(path.read_bytes()), "bio", "bio", "user explicitly approved 10.8 GB")
+    assert (record["family"], revision) == ("bio", "test-v1")
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         plan_record(path, "0" * 64, "bio", "bio")
