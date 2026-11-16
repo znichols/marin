@@ -143,6 +143,42 @@ an RL training dataset. To reproduce a batch item, obtain the pinned private
 plan locally and pass `--candidates <plan> --candidate-sha256 <digest>` to
 `acquire.py`, along with the family, variant, and a fresh private output URI.
 
+## Full pinned HF trees (follow-up)
+
+The small selections above were only a transfer pilot. A second private plan
+pins **every file** in all five public HF repository trees at the same revisions:
+`.../id-evals/inventory/complete-hf-trees-5-v1/plan.json`, SHA-256
+`57c68413634a0598e212a3626b06116a16649e9c73758b6ebf2fcd47f5c85283`.
+`acquire_full.py` streams large files through a bounded temporary spool and
+checks each Git blob ID or LFS SHA-256 and size *before* writing to S3; the
+remote size is checked again. The private snapshots below contain the entire
+pinned HF repository tree, **not** separately linked off-repository capsules,
+papers, source databases or software. No eval content is imported into
+TaskForge training.
+
+| HF repository | Full private snapshot (under the same `id-evals/` root) | Size | Manifest SHA-256 |
+| --- | --- | ---: | --- |
+| CORE-Bench | `core-bench/full-18ac8ed-v1/` | 68,556 B / 4 files | `a7484bc4f3b809a103fb241058ca27bf7c7781e912da53773e943f26954e7ba9` |
+| LAB-Bench | `lab-bench/full-5c77cec-v1/` | 334,210,432 B / 11 files | `87a68fe175bc6c3e697004d46cd052359733945cd143951700108dcaf9fdecf5` |
+| DiscoveryBench | `discoverybench/full-e54ec03-v1/` | 35,208,419 B / 789 files | `592400b6f3c081aa3260d62f96f6403ffb2b9d515e7942d815aaf49c59fca14d` |
+| BixBench | `bixbench/full-f8cc3bd-v1/` | 5,909,999,805 B / 67 files | `0e84035a0e5bbbfe0b64f0582e29859844f4b99dae27b9335236aa4b18b9ede4` |
+
+**BioKGBench is pending explicit size-specific transfer sign-off**: its
+complete HF tree is 10,797,688,927 bytes / 96 files, over the project's
+10 GB cross-region threshold. The script refuses a transfer of this size
+without a separate exception; its previous 1.1 MB selection is not the full
+source. No request to fetch the remaining files has been made to the storage service.
+
+Initial component boundaries for rights review: LAB-Bench includes FigQA and
+TableQA files with embedded third-party scientific material; CORE-Bench's
+repository includes an encrypted test file, while computational paper capsules
+live elsewhere; DiscoveryBench includes real and synthetic tracks with different
+underlying dataset origins; BixBench's full archive includes notebook capsules
+with separately sourced assets. BioKGBench's graph and paper corpus need their
+own rights review. Top-level CC-BY-SA, MIT, ODC-BY, or Apache declarations do
+not resolve rights to those embedded assets; no component is yet cleared for
+training.
+
 ## Continue with upstream sources
 
 For each lead in the private manifests, inspect the actual upstream source and
