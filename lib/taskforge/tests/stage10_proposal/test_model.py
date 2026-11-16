@@ -91,6 +91,23 @@ def test_json_round_trip_preserves_typed_content_and_canonical_digest(proposal):
     assert replace(parsed, body=BODY.replace("kernel", "image")).digest != parsed.digest
 
 
+def test_web_page_source_requires_pinned_https_archive(proposal):
+    source = SourceRef(SourceKind.WEB_PAGE, "https://medlineplus.gov/genetics/understanding/", "a" * 64)
+    page_proposal = replace(proposal, header=replace(proposal.header, source=source))
+    assert parse(render(page_proposal)) == page_proposal
+    schema = document_request_fields(PROPOSAL_ID, source)["response_format"]["json_schema"]["schema"]
+    jsonschema.validate(json.loads(render(page_proposal)), schema)
+    for url, content_hash in (
+        ("http://example.org/page", "a" * 64),
+        ("https://example.org/page#fragment", "a" * 64),
+        ("https://example.org/page", "short"),
+    ):
+        authored = json.loads(render(page_proposal))
+        authored["header"]["source"] = {"kind": "web_page", "ref": url, "hash": content_hash}
+        with pytest.raises(ProposalFormatError, match="web_page source"):
+            parse(json.dumps(authored))
+
+
 def test_escaped_strings_and_fenced_headings_survive_round_trip(proposal):
     body = BODY.replace(
         "Find the kernel of the map.", 'Use "quoted" Unicode λ and path C:\\tmp.\n```markdown\n## Build plan\n```'
