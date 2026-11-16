@@ -32,15 +32,23 @@ others TBD**. Do not turn the historical label into a rights or readiness claim.
   The 51 open-access full papers were selected by experts using IntAct and CKG.
   The author README explicitly warns that the graph's component databases have
   **their own licenses**. An OA paper is not automatically licensed for training.
-- **Possible independent RL route:** Start with a *new* synthetic graph with
-  documented biological relationship semantics, created without the benchmark
-  graph, edges, entity pairs, templates or claims. Generate tool-use, join,
-  negation and insufficient-evidence tasks, with executable graph-query and
-  provenance verifiers. For real biology, separately pin an upstream graph
-  source **after** checking its own version, data terms and derived-use rights;
-  generate fresh hypotheses, verify them against the pinned source, and audit
-  overlap against the private eval. Do not train on SciFact/PubMedQA-derived
-  eval claims or the benchmark's PDFs.
+- **Possible ID RL route:** Use the **same pinned CKG-derived graph as the
+  training and evaluation tool environment**, provided the licenses and terms
+  of its constituent databases permit this use. Sharing source data is the
+  point of an in-distribution evaluation; it is not permission to copy the
+  benchmark's KGQA/KGCheck instructions, question templates, labels, or model
+  rollouts. Independently author new graph-investigation objectives (for
+  example, multi-relation evidence gathering or consistency checks), sample
+  fresh entities and relationships, compute answers with an executable graph
+  query, and independently validate biological meaning. Privately screen new
+  tasks against eval targets at the question, entity-pair, edge, relation,
+  answer and evidence levels; keep exact eval target facts out of training
+  prompts/answers where they could turn the eval into memorization. This does
+  **not** require making the whole graph or all entities disjoint. If a
+  database component's terms prohibit training, remove that component and
+  its derived edges before generating tasks, or use a separately licensed
+  graph. The SCV corpus and KGCheck PDFs need their own rights assessment;
+  do not train on their eval claims or question/answer traces.
 
 ### LAB-Bench — sequence operations, database lookup and literature/visual reasoning
 
