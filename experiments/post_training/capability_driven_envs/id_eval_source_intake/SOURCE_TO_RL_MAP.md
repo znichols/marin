@@ -11,6 +11,40 @@ Git or a task generator. The private metadata-only count/schema snapshot is
 A historical spreadsheet called these families ID leads; **the current bio-evals catalog labels only three variants ID and most
 others TBD**. Do not turn the historical label into a rights or readiness claim.
 
+## Reusing an ID eval's source assets, not its tasks
+
+The **same pinned graph, table, sequence resource, figure or capsule input** may
+be a valid ID training environment if its component-specific terms permit
+training use. "Independent task" refers to the *new objective and answer
+construction*, not necessarily different source bytes. Keep these layers
+separate:
+
+1. **Source-only projection:** explicitly allowlist raw assets from the pinned
+   snapshot, retain origin hashes and licenses, and give the generator access
+   only to this projection and a human-authored **high-level skill brief**.
+   Never mount benchmark question/goal/prompt, options, gold labels, reference
+   analyses, CoT or teacher eval rollouts in the authoring job. For a graph,
+   this could include graph/ontology TSVs but not `kgqa`, `kgcheck` or `scv`
+   split files. For a capsule, separate raw inputs from solution notebooks.
+2. **Component terms:** follow each asset to its original provider and record
+   its access conditions, license and embedded credits. Skip obvious
+   restrictions; label unresolved components unresolved rather than declaring
+   the whole repository usable or forbidden. The repository-level license
+   alone cannot resolve mixed-origin assets.
+3. **New workpiece:** sample new objectives against the permitted source,
+   compute independent references using a verifier or executable analysis,
+   and review scientific interpretation and alternative answers. Use new
+   tasks to teach the eval's *skill* and tool-use pattern, never rephrase a
+   held-out instruction.
+4. **Private decontamination:** compare candidate tasks, target facts,
+   evidence, papers/capsules and answer results against the private eval.
+   Reject exact or equivalent eval questions and answer-bearing tasks; this
+   does **not** require holding out the whole source or every entity. Keep the
+   overlap report private and separate from generation prompts.
+
+This is an intake and generation design, not a finding that any particular
+mixed-origin asset is cleared for RL training.
+
 ## Five acquired source families
 
 ### BioKGBench — grounding, graph queries, claim verification
@@ -69,14 +103,16 @@ others TBD**. Do not turn the historical label into a rights or readiness claim.
   links, and 15 rows explicitly have `is_opensource=False`. ProtocolQA alters
   published protocols from protocols.io and STAR Protocols. No individual
   paper, figure, table, database or protocol is cleared by the HF CC-BY-SA tag.
-- **Possible independent RL route:** First author genuinely new tasks on
-  procedurally generated DNA/RNA/protein sequences (translation, reading
-  frames, restriction-site logic, compositional statistics), with independent
-  executable graders and biology review. Use **new instructions and seeds**,
-  not eval stems/templates/distractors. Later, separately license and pin
-  upstream database releases for *new* retrieval exercises. Literature,
-  protocols and image/table work require source-by-source text and asset
-  permissions; exclude the 15 flagged LitQA2 items outright from consideration.
+- **Possible ID RL route:** Author new tasks on procedural DNA/RNA/protein
+  sequences with independent graders. For DbQA, the **same underlying database
+  releases** could support fresh retrieval objectives if their own terms
+  permit this use; pin the release and keep eval stems, choices, keys and
+  generation templates out of the authoring context. The original scientific
+  figures/tables or protocols can likewise be considered as *source assets*
+  only if their individual rights permit training use; ask genuinely different
+  questions with independent reference checks. Never train on the public
+  LAB-Bench questions just because 80% were released or on the 15
+  `is_opensource=False` LitQA2 items.
 
 ### CORE-Bench — computational reproducibility
 
@@ -94,12 +130,14 @@ others TBD**. Do not turn the historical label into a rights or readiness claim.
   [Code Ocean](https://codeocean.com/) papers and manually authored result
   checks. The harness obtains associated capsules from a separate endpoint;
   each paper's code, data and dependencies have their own provenance and terms.
-- **Possible independent RL route:** Package original small Python/R
-  biomedical analyses with **newly simulated or separately licensed data**,
-  reproducible scripts, logged seeds, a container and independently computed
-  result checks. Vary environment failure modes and output types. Never reuse
-  benchmark capsule IDs, prompts, result questions or Code Ocean payloads as
-  training material; review software licenses separately.
+- **Possible ID RL route:** If a particular Code Ocean capsule's code, data
+  and dependencies allow this use, its *raw assets* could support new
+  reproducibility tasks about different outputs or experiments. Do not give
+  the task author the benchmark prompt, result questions, answer targets or
+  successful eval traces; do not treat the capsule's own result notebooks as
+  newly generated gold. Independently run the capsule, derive and check new
+  targets, and audit answer/output overlap. Original simulated capsules are
+  an easier first pilot; they are not a requirement for every eventual task.
 
 ### DiscoveryBench — data-driven scientific discovery
 
@@ -120,13 +158,15 @@ others TBD**. Do not turn the historical label into a rights or readiness claim.
   ODC-BY declaration does **not** individually resolve paper, code, GBIF or
   survey-data terms. A metadata-only scan found no per-task license field in
   the repository JSON.
-- **Possible independent RL route:** Build **new** simulated ecological or
-  molecular measurements from an explicit data-generating process (signal,
-  confounders, negative controls, missingness). Ask for an evidenced
-  hypothesis, a reproducible analysis and calibrated uncertainty. Grade
-  derivations, held-out simulations and concrete statistical results, not
-  semantic resemblance to reference hypotheses. For real data, check each
-  original archive's terms and do not reuse the benchmark's datasets/goals.
+- **Possible ID RL route:** If a real dataset's original archive permits
+  training use, it can be the **same underlying table** supplied to a new
+  analysis task; independently pose and verify a different discovery goal,
+  without using the benchmark's goals, hypotheses, reference workflows or
+  answer keys. Screen for equivalent findings even when wording differs.
+  Original simulated ecological/molecular measurements with known signals,
+  confounders and missingness are an easier first pilot. Grade concrete
+  statistics and reproducible derivations, not semantic resemblance to an
+  eval reference.
 
 ### BixBench — long-horizon computational biology
 
@@ -143,13 +183,15 @@ others TBD**. Do not turn the historical label into a rights or readiness claim.
   reviewed them. See the [author repo](https://github.com/Future-House/BixBench/tree/49311180bdacb324c596f2e07596c126f2004008).
   The top-level Apache declaration does not document every notebook's and
   input dataset's origin, permissions or patient-data status.
-- **Possible independent RL route:** Create *different* reproducible analysis
-  capsules using original simulated experiments or independently licensed
-  studies: perturbation counts, sequence variants, imaging summaries, etc.
-  Ask for a documented multi-step analysis and give executable or independently
-  computed numerical/structural graders. Keep capsule IDs, data, scientific
-  questions and answer traces disjoint from BixBench; adjudicate scientific
-  interpretation and answer non-uniqueness before any training export.
+- **Possible ID RL route:** First separate a capsule's raw input files from
+  its notebooks, hypotheses, result summaries and benchmark questions. If the
+  inputs have usable source rights, the *same raw data* could support a
+  genuinely new analysis objective, with an independently executed reference
+  and numerical/structural grader. Do not feed the notebook's solved analysis
+  or eval answer into a task author. Screen for identical or equivalent
+  conclusions, and adjudicate ambiguity before export. New simulated or
+  independently licensed capsules are useful alternatives, not an ID
+  requirement.
 
 ## Existing ID leads outside the five-source batch
 
@@ -176,16 +218,31 @@ others TBD**. Do not turn the historical label into a rights or readiness claim.
   questions would require independently sourced papers, rights checks and
   expert review, **not** paraphrases of GPQA items or teacher eval rollouts.
 
-## Practical first workpiece
+## Practical first workpieces
 
-Pilot a small, independently authored **synthetic sequence-analysis** family:
+**Priority 1: shared-graph BioKGBench pilot.** Map each of the 23 graph TSVs and
+12 ontology TSVs to the upstream provider/version and applicable data terms.
+If a usable subset exists, make a pinned *source-only* graph view (never mount
+`kgqa`, `kgcheck`, `scv`, PDFs or eval-derived prompts into generation).
+Author perhaps 20 new objectives across evidence-backed graph exploration,
+relationship composition and consistency checking. Record each objective's
+graph revision, generating seed, query program, referenced triples, computed
+answer and independent verifier. Privately reject tasks equivalent to eval
+queries or gold outcomes; retain the same graph and biological distribution.
+This is a pilot design, **not a statement that the graph's rights are settled**.
+
+**Priority 2: inexpensive procedural calibration.** Pilot a small,
+independently authored **synthetic sequence-analysis** family:
 seeded source generator (no benchmark inputs), scientifically constrained
 synthetic sequences, hidden deterministic reference program, independent
 property-based checks, and TaskForge controls/adversarial trials. Generate
 open-answer or tool-use tasks rather than imitating LAB-Bench's MCQ text.
-Before expanding to database, literature or real-data tasks, separately
-archive the exact upstream release and its terms/asset credits, then test
-cross-source and eval overlap privately. Compare not just question text but
+For any database, literature or real-data pilot, identify source-only assets
+inside the pinned eval snapshot, check the terms and asset credits of their
+original releases, then test task/answer overlap privately.
+The underlying asset **may be shared** with the eval where its terms permit;
+only benchmark-authored tasks, keys, and teacher rollouts are categorically
+excluded from training. Compare not just question text but
 paper DOI, capsule/repository, dataset release, graph entity/edge, and source
 passage identifiers; an exact-text-only check misses upstream contamination.
 Source provenance, scientific correctness, grader reliability and Stage 50/60

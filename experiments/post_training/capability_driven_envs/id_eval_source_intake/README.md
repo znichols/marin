@@ -179,10 +179,10 @@ It records only paths, sizes, parquet field names, subtask labels, source URL
 | Component | Distinct rights/provenance issue | Training-source direction |
 | --- | --- | --- |
 | BioKGBench | 23 graph database TSVs total 10.66 GB, with named upstreams including DisGeNET, STRING, SIGNOR, Reactome, SMPDB and IntAct; 51 PDF articles total 97 MB. The HF MIT tag does not establish rights to these independent databases or papers. | Check constituent database terms; if they permit training, use this same pinned graph as an ID tool environment for **new** graph tasks, not the eval questions or labels. Paper/abstract rights are separate. |
-| LAB-Bench | FigQA has 181 items with figures linked to 41 DOI sources; TableQA has 244 items linked to 134 DOI sources; SuppQA has 82 items with DOI sources. LitQA2 has 199 rows and 205 DOI links: 15 rows carry `is_opensource=False`, while `True` on the others is not a license grant. Sequence and database subtasks have null `source` values, not proven clearance. | Set aside the 15 flagged papers and all embedded figures/tables pending asset-level rights; independently generate *new* synthetic sequence exercises, not questions modeled on eval items. |
-| CORE-Bench | The test JSON is encrypted (the official README publishes the passphrase); the computational paper capsules are not included in the HF repository. The top-level MIT declaration cannot cover them. | No capsule-based training input until individual assets are identified and checked. |
-| DiscoveryBench | 789 files across real and synthetic train/test tracks. A metadata-only pass found no per-task `license` fields in its JSON; real tracks have distinct external origins. | Check each real source and separation of splits; start with independent synthetic tables only, not benchmark tasks or answer keys. |
-| BixBench | 64 ZIP capsules contain 1,133 file members (including 49 notebooks, 633 `.xlsx` files, 24 FASTQs and nested ZIPs); no member named LICENSE was found. Absence of a license file is not proof of restriction or permission. | Resolve each capsule's original data/notebook terms before using assets; use high-level analysis skills with separately sourced data. |
+| LAB-Bench | FigQA has 181 items with figures linked to 41 DOI sources; TableQA has 244 items linked to 134 DOI sources; SuppQA has 82 items with DOI sources. LitQA2 has 199 rows and 205 DOI links: 15 rows carry `is_opensource=False`, while `True` on the others is not a license grant. Sequence and database subtasks have null `source` values, not proven clearance. | New procedural sequences are the easy pilot; the same underlying databases, papers or images may support **new** tasks if their own terms permit, never the eval questions or keys. |
+| CORE-Bench | The test JSON is encrypted (the official README publishes the passphrase); the computational paper capsules are not included in the HF repository. The top-level MIT declaration cannot cover them. | Check capsule code/data rights; if usable, the same raw capsule may support independently verified **different** result tasks, not benchmark prompts or outputs. |
+| DiscoveryBench | 789 files across real and synthetic train/test tracks. A metadata-only pass found no per-task `license` fields in its JSON; real tracks have distinct external origins. | The same underlying table may support new discovery objectives if its original terms permit; keep benchmark goals, hypotheses and keys out of generation. |
+| BixBench | 64 ZIP capsules contain 1,133 file members (including 49 notebooks, 633 `.xlsx` files, 24 FASTQs and nested ZIPs); no member named LICENSE was found. Absence of a license file is not proof of restriction or permission. | Check raw-input rights; if usable, reuse those inputs for new analyses but exclude benchmark questions and solution notebooks from authoring. |
 
 **Task generation starting point:** describe broad skills (sequence calculations,
 interpreting independent biomedical evidence, graph reasoning, quantitative
@@ -206,6 +206,8 @@ For each lead in the private manifests, inspect the actual upstream source and
 its license, access terms, third-party credits, and usable content **when
 fetching it**. Skip sources with explicit evaluation-only/no-training terms or
 missing rights; record unresolved cases as unresolved. Pin eligible source
-bytes and use those, plus high-level skill descriptions, to generate new
-TaskForge workpieces. Eval copies stay private for overlap/decontamination.
+bytes and use a rights-checked **source-only projection** plus high-level
+skill descriptions to generate new TaskForge workpieces. Eval item copies stay
+private for overlap/decontamination; usable source assets can be shared with
+the training environment without exposing eval instructions or answers.
 TaskForge Stage 50/60 checks do not settle source rights or biology correctness.
